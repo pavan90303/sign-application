@@ -202,3 +202,22 @@ class CourseQuizAttempt(models.Model):
     def __str__(self):
         return f"{self.user.username} - {self.section.title} Quiz: {self.score}% ({self.correct_count}/{self.total_questions}) ({'Passed' if self.passed else 'Failed'})"
 
+
+class PracticeAttempt(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='practice_attempts')
+    section = models.ForeignKey(CourseSection, on_delete=models.CASCADE, related_name='practice_attempts')
+    lesson = models.ForeignKey(Lesson, on_delete=models.SET_NULL, null=True, blank=True, related_name='practice_attempts')
+    expected_sign = models.CharField(max_length=100)
+    predicted_sign = models.CharField(max_length=100, null=True, blank=True)
+    recognition_confidence = models.FloatField(default=0.0)  # genuine 0.0 - 1.0 probability
+    reference_similarity = models.FloatField(null=True, blank=True)  # if computed 0.0 - 1.0
+    matched = models.BooleanField(default=False)
+    status = models.CharField(max_length=50, default='uncertain')  # matched, not_matched, uncertain, no_hand, unsupported, insufficient_data
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"{self.user.username} - {self.expected_sign} vs {self.predicted_sign} ({self.status}) [{self.recognition_confidence*100:.0f}%]"
+

@@ -322,5 +322,71 @@ class LearnSignLanguageFeatureTests(TestCase):
                     self.assertEqual(len(set(q['options'])), 4)
                     self.assertIn(q['correct_answer'], q['options'])
 
+    def test_practice_lookup_in_section(self):
+        """Verify looking up a sign in the current section returns verified lesson"""
+        self.client.login(username='learnuser', password='password123')
+        resp = self.client.get(reverse('learn_practice_lookup', args=[self.section2.id]) + '?q=hello')
+        self.assertEqual(resp.status_code, 200)
+        data = json.loads(resp.content)
+        self.assertTrue(data['found'])
+        self.assertTrue(data['in_section'])
+        self.assertEqual(data['lesson']['word'], 'Hello')
+
+    def test_practice_lookup_other_section(self):
+        """Verify looking up a sign from another section displays helpful warning without analyzing"""
+        self.client.login(username='learnuser', password='password123')
+        # Look up 'A' (Section 1) while in Section 2
+        resp = self.client.get(reverse('learn_practice_lookup', args=[self.section2.id]) + '?q=A')
+        self.assertEqual(resp.status_code, 200)
+        data = json.loads(resp.content)
+        self.assertFalse(data['found'])
+        self.assertFalse(data['in_section'])
+        self.assertTrue(data['belongs_to_other_section'])
+        self.assertIn('Section 1', data['message'])
+
+    def test_practice_analyze_no_hand(self):
+        """Verify analyzing without hand landmarks returns no_hand status"""
+        self.client.login(username='learnuser', password='password123')
+        resp = self.client.post(
+            reverse('learn_practice_analyze', args=[self.section2.id]),
+            json.dumps({'expected_sign': 'Hello', 'frames': []}),
+            content_type='application/json'
+        )
+        self.assertEqual(resp.status_code, 200)
+        data = json.loads(resp.content)
+        self.assertEqual(data['status'], 'no_hand')
+        self.assertFalse(data['matched'])
+
+    def test_practice_analyze_valid_frames(self):
+        """Verify analyzing valid frames returns genuine confidence and saves PracticeAttempt"""
+        from study_companion.models import PracticeAttempt
+        from study_companion.sign_recognition import generate_base_hand_landmarks
+        self.client.login(username='learnuser', password='password123')
+
+        # Create 10 realistic frames for Hello (open hand waving)
+        base_hand = generate_base_hand_landmarks([1, 1, 1, 1, 1], finger_spread=0.45)
+        frames = []
+        for i in range(12):
+            # Hand with small wave offset
+            frame_lms = [{'x': float(p[0] + i*0.02), 'y': float(p[1]), 'z': float(p[2])} for p in base_hand]
+            frames.append({'landmarks': frame_lms})
+
+        resp = self.client.post(
+            reverse('learn_practice_analyze', args=[self.section2.id]),
+            json.dumps({'expected_sign': 'Hello', 'frames': frames}),
+            content_type='application/json'
+        )
+        self.assertEqual(resp.status_code, 200)
+        data = json.loads(resp.content)
+        self.assertTrue(data['success'])
+        self.assertIn(data['status'], ('matched', 'not_matched', 'uncertain'))
+        self.assertGreaterEqual(data['recognition_confidence'], 0.0)
+        self.assertLessEqual(data['recognition_confidence'], 1.0)
+
+        # Verify PracticeAttempt logged in database
+        attempt = PracticeAttempt.objects.filter(user=self.user, section=self.section2).first()
+        self.assertIsNotNone(attempt)
+        self.assertEqual(attempt.expected_sign, 'Hello')
+
 
 

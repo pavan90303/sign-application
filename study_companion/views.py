@@ -337,9 +337,11 @@ def history_view(request):
 # LEARN SIGN LANGUAGE (UDEMY + DUOLINGO)
 # ==========================================
 from django.urls import reverse
-from .models import Course, CourseSection, Lesson, LessonProgress, SectionProgress, CourseQuizAttempt, UserProfile
+from .models import Course, CourseSection, Lesson, LessonProgress, SectionProgress, CourseQuizAttempt, UserProfile, PracticeAttempt
 from .course_data import get_user_course_progress, search_section_signs, seed_isl_course, generate_section_quiz, check_quiz_answer
+from .sign_recognition import analyze_practice_sign, lookup_sign_for_practice, SUPPORTED_RECOGNITION_SIGNS, CANONICAL_SIGNS
 from django.utils import timezone
+
 
 
 
@@ -535,11 +537,12 @@ def learn_section_completed_view(request, section_id):
 @login_required(login_url="login")
 def learn_practice_view(request, section_id):
     """
-    Interactive practice page:
-    - Text box: 'What would you like to practice?'
-    - Side by side: Expected Sign (GIF/video) | Live Webcam (Your Practice)
-    - Fully responsive: side-by-side on desktop, stacked on mobile
-    - Practice does NOT block taking the quiz
+    Upgraded Real Sign Recognition Practice Zone:
+    - Text lookup: loads verified lesson from CURRENT section only.
+    - Side-by-side: Expected Sign (video/animation) | Live Webcam with MediaPipe landmark tracking.
+    - Real recognition pipeline: analyzes hand landmarks and movement via trained classifier.
+    - Grounded feedback: genuine confidence %, match status, and guidance tips.
+    - Practice is strictly optional and does NOT block quizzes.
     """
     section = get_object_or_404(CourseSection, id=section_id)
     lessons = list(section.lessons.all().order_by('order'))
@@ -554,26 +557,104 @@ def learn_practice_view(request, section_id):
         initial_video_exists = first_asset['exists']
         initial_video_url = first_asset['url']
 
+    # Decorate lessons with recognition support status
+    decorated_lessons = []
+    for l in lessons:
+        norm = l.word_or_phrase.strip().lower()
+        is_supported = norm in SUPPORTED_RECOGNITION_SIGNS or norm.replace(" ", "_") in SUPPORTED_RECOGNITION_SIGNS
+        first_a = l.sign_asset_list[0] if l.sign_asset_list else None
+        decorated_lessons.append({
+            'id': l.id,
+            'title': l.title,
+            'word_or_phrase': l.word_or_phrase,
+            'explanation': l.explanation,
+            'is_supported': is_supported,
+            'video_url': first_a['url'] if first_a else '',
+            'has_video': first_a['exists'] if first_a else False,
+        })
+
+    # Recent practice attempts for user in this section
+    recent_attempts = PracticeAttempt.objects.filter(
+        user=request.user, section=section
+    ).order_by('-created_at')[:6]
+
     return render(request, 'learn_practice.html', {
         'section': section,
-        'lessons': lessons,
+        'course': section.course,
+        'lessons': decorated_lessons,
         'available_signs': available_signs,
         'initial_lesson': default_lesson,
         'default_lesson': default_lesson,
         'initial_video_url': initial_video_url,
         'initial_video_exists': initial_video_exists,
+        'recent_attempts': recent_attempts,
+        'supported_signs_count': sum(1 for d in decorated_lessons if d['is_supported']),
     })
+
+
+@login_required(login_url="login")
+def learn_practice_lookup_api(request, section_id):
+    """
+    API endpoint: Validates text entered by user strictly against current section (Requirement 4 & 25).
+    If found in section -> returns verified lesson data.
+    If belongs to another section -> returns informative message that sign belongs to other section.
+    If unknown -> returns message and available signs in section.
+    """
+    query = request.GET.get('q', '').strip()
+    result = lookup_sign_for_practice(section_id, query)
+    return JsonResponse(result)
 
 
 @login_required(login_url="login")
 def learn_practice_search_api(request, section_id):
     """
-    API endpoint: searches sign dictionary for current section.
-    If sign is not in current section, returns informative message and suggestions.
+    Search autocomplete within current section.
     """
     query = request.GET.get('q', '').strip()
-    result = search_section_signs(section_id, query)
+    result = lookup_sign_for_practice(section_id, query)
     return JsonResponse(result)
+
+
+@login_required(login_url="login")
+def learn_practice_analyze_api(request, section_id):
+    """
+    POST endpoint: Analyzes recorded webcam hand landmark sequence.
+    Input: { "expected_sign": "HELLO", "frames": [...] }
+    Invokes genuine trained sign recognition classifier, calculates genuine confidence and reference similarity,
+    evaluates match status, and logs PracticeAttempt.
+    """
+    if request.method != 'POST':
+        return JsonResponse({'status': 'error', 'message': 'POST required'}, status=405)
+
+    try:
+        data = json.loads(request.body)
+        expected_sign = data.get('expected_sign', '')
+        frames = data.get('frames', [])
+    except Exception as e:
+        return JsonResponse({'status': 'error', 'message': f'Invalid JSON payload: {str(e)}'}, status=400)
+
+    result = analyze_practice_sign(section_id, expected_sign, frames, user=request.user)
+    return JsonResponse(result)
+
+
+@login_required(login_url="login")
+def learn_practice_attempts_api(request, section_id):
+    """
+    Returns user's recent practice attempts for this section.
+    """
+    section = get_object_or_404(CourseSection, id=section_id)
+    attempts = PracticeAttempt.objects.filter(user=request.user, section=section).order_by('-created_at')[:10]
+    data = [{
+        'id': a.id,
+        'expected_sign': a.expected_sign,
+        'predicted_sign': a.predicted_sign,
+        'confidence': int(round(a.recognition_confidence * 100)),
+        'similarity': int(round(a.reference_similarity * 100)) if a.reference_similarity is not None else None,
+        'matched': a.matched,
+        'status': a.status,
+        'date': a.created_at.strftime('%H:%M, %d %b')
+    } for a in attempts]
+    return JsonResponse({'status': 'ok', 'attempts': data})
 
 
 @login_required(login_url="login")
