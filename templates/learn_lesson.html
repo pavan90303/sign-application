@@ -1,0 +1,264 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}{{ lesson.title }} • {{ section.title }} • SignAI Pro{% endblock %}
+
+{% block page_title %}{{ lesson.title }}{% endblock %}
+{% block page_subtitle %}{{ section.title }} • Lesson {{ lesson.order }}{% endblock %}
+
+{% block header_content %}
+<div class="flex items-center space-x-2 text-xs font-semibold text-slate-400">
+    <a href="{% url 'learn_dashboard' %}" class="hover:text-primary transition-colors flex items-center">
+        <span class="material-icons-round text-sm mr-1">school</span> Course
+    </a>
+    <span class="text-slate-600">/</span>
+    <span class="text-slate-300">{{ section.title }}</span>
+    <span class="text-slate-600">/</span>
+    <span class="text-primary font-medium">{{ lesson.title }}</span>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+    <!-- Main Content & Player Area (8 cols on lg) -->
+    <div class="lg:col-span-8 space-y-6">
+        <!-- Video Card / Sign Player -->
+        <div class="glass-panel p-6 rounded-3xl border border-white/10 relative overflow-hidden shadow-2xl">
+            <div class="flex items-center justify-between mb-4">
+                <div class="flex items-center space-x-3">
+                    <span class="px-3 py-1 rounded-full bg-primary/10 text-primary border border-primary/20 text-xs font-semibold uppercase tracking-wider">
+                        Sign Animation
+                    </span>
+                    <h2 class="text-xl font-bold text-white tracking-tight">{{ lesson.title }}</h2>
+                </div>
+
+                <div class="flex items-center space-x-2">
+                    <button id="playback-speed-btn" onclick="toggleSpeed()" class="px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-xs font-medium text-slate-300 border border-white/5 transition-all">
+                        Speed: <span id="speed-indicator">1.0x</span>
+                    </button>
+                    <button onclick="replayVideo()" class="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300 border border-white/5 transition-all" title="Replay Animation">
+                        <span class="material-icons-round text-base">replay</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Video Player or Fallback Placeholder -->
+            <div class="relative w-full aspect-video bg-black/60 rounded-2xl overflow-hidden border border-white/10 flex items-center justify-center">
+                {% if video_exists and video_url %}
+                <video id="sign-video" class="w-full h-full object-contain" autoplay loop muted playsinline controls>
+                    <source src="{{ video_url }}" type="video/mp4">
+                    Your browser does not support the video tag.
+                </video>
+                {% else %}
+                <div class="text-center p-8 max-w-md space-y-3">
+                    <div class="w-16 h-16 rounded-2xl bg-amber-500/10 text-amber-400 border border-amber-500/20 flex items-center justify-center mx-auto">
+                        <span class="material-icons-round text-3xl">motion_photos_off</span>
+                    </div>
+                    <h4 class="text-lg font-bold text-white">Sign animation not available yet.</h4>
+                    <p class="text-sm text-slate-400">
+                        The video animation for <span class="text-primary font-semibold">"{{ lesson.title }}"</span> is currently being prepared by our sign language team.
+                    </p>
+                    <div class="inline-flex items-center space-x-2 px-3 py-1.5 rounded-full bg-white/5 border border-white/5 text-xs text-slate-400">
+                        <span class="material-icons-round text-xs">info</span>
+                        <span>You can still study the lesson notes and continue.</span>
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+
+            <!-- Lesson Explanation / Notes -->
+            <div class="mt-6 space-y-4 border-t border-white/5 pt-6">
+                <div>
+                    <h3 class="text-sm font-semibold text-slate-300 uppercase tracking-wider mb-2 flex items-center">
+                        <span class="material-icons-round text-base text-primary mr-1.5">description</span>
+                        Lesson Description
+                    </h3>
+                    <p class="text-slate-300 text-sm leading-relaxed whitespace-pre-line">{{ lesson.description }}</p>
+                </div>
+
+                {% if lesson.content %}
+                <div class="p-4 rounded-2xl bg-white/5 border border-white/5 text-sm text-slate-300">
+                    <h4 class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">Key Takeaway</h4>
+                    <p>{{ lesson.content }}</p>
+                </div>
+                {% endif %}
+            </div>
+
+            <!-- Navigation and Completion Controls -->
+            <div class="mt-8 pt-6 border-t border-white/5 flex flex-col sm:flex-row items-center justify-between gap-4">
+                <!-- Previous Button -->
+                {% if prev_lesson %}
+                <a href="{% url 'learn_lesson' prev_lesson.id %}" class="w-full sm:w-auto inline-flex items-center justify-center px-4 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white text-sm font-medium border border-white/10 transition-all">
+                    <span class="material-icons-round text-base mr-1.5">arrow_back</span>
+                    Previous Lesson
+                </a>
+                {% else %}
+                <button disabled class="w-full sm:w-auto inline-flex items-center justify-center px-4 py-2.5 rounded-xl bg-white/5 text-slate-600 text-sm font-medium border border-white/5 cursor-not-allowed">
+                    <span class="material-icons-round text-base mr-1.5">arrow_back</span>
+                    Previous Lesson
+                </button>
+                {% endif %}
+
+                <!-- Mark as Completed Toggle -->
+                <button id="complete-btn" onclick="toggleLessonComplete({{ lesson.id }})" class="w-full sm:w-auto inline-flex items-center justify-center px-5 py-2.5 rounded-xl {% if is_completed %}bg-emerald-500/20 text-emerald-400 border border-emerald-500/30{% else %}bg-primary hover:bg-primary/90 text-white shadow-lg shadow-primary/20{% endif %} text-sm font-semibold transition-all">
+                    <span id="complete-icon" class="material-icons-round text-base mr-1.5">{% if is_completed %}check_circle{% else %}done{% endif %}</span>
+                    <span id="complete-text">{% if is_completed %}Completed{% else %}Mark as Completed{% endif %}</span>
+                </button>
+
+                <!-- Next Button -->
+                {% if next_lesson %}
+                <a href="{% url 'learn_lesson' next_lesson.id %}" class="w-full sm:w-auto inline-flex items-center justify-center px-4 py-2.5 rounded-xl bg-primary/20 hover:bg-primary/30 text-primary hover:text-white text-sm font-semibold border border-primary/30 transition-all">
+                    Next Lesson
+                    <span class="material-icons-round text-base ml-1.5">arrow_forward</span>
+                </a>
+                {% else %}
+                <!-- Reached end of section -->
+                <a href="{% url 'learn_section_completed' section.id %}" class="w-full sm:w-auto inline-flex items-center justify-center px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 text-white text-sm font-semibold shadow-lg shadow-emerald-500/20 transition-all">
+                    Finish Section
+                    <span class="material-icons-round text-base ml-1.5">celebration</span>
+                </a>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Curriculum Sidebar (4 cols on lg) -->
+    <div class="lg:col-span-4 space-y-4">
+        <div class="glass-panel p-5 rounded-3xl border border-white/10 sticky top-6 max-h-[85vh] flex flex-col shadow-2xl">
+            <div class="flex items-center justify-between pb-4 border-b border-white/5">
+                <div class="flex items-center space-x-2">
+                    <span class="material-icons-round text-primary text-xl">menu_book</span>
+                    <h3 class="font-bold text-white text-base">Course Curriculum</h3>
+                </div>
+                <a href="{% url 'learn_dashboard' %}" class="text-xs text-primary hover:underline">View Map</a>
+            </div>
+
+            <!-- Scrollable Sections Accordion -->
+            <div class="overflow-y-auto mt-4 space-y-3 pr-1 custom-scrollbar flex-1">
+                {% for sec_item in sidebar_sections %}
+                <div class="rounded-2xl border border-white/5 bg-white/[0.02] overflow-hidden">
+                    <!-- Section Header -->
+                    <div class="p-3.5 flex items-center justify-between cursor-pointer {% if sec_item.section.id == section.id %}bg-primary/10 border-b border-primary/20{% else %}hover:bg-white/5{% endif %}" onclick="toggleSectionAccordion({{ sec_item.section.id }})">
+                        <div class="flex items-center space-x-2.5 min-w-0">
+                            <span class="w-6 h-6 rounded-lg {% if sec_item.section.id == section.id %}bg-primary text-white{% else %}bg-white/10 text-slate-400{% endif %} text-xs font-bold flex items-center justify-center flex-shrink-0">
+                                {{ sec_item.section.order }}
+                            </span>
+                            <span class="text-xs font-bold text-white truncate">{{ sec_item.section.title }}</span>
+                        </div>
+                        <span id="accordion-icon-{{ sec_item.section.id }}" class="material-icons-round text-slate-400 text-sm transition-transform duration-200 {% if sec_item.section.id == section.id %}rotate-180{% endif %}">
+                            expand_more
+                        </span>
+                    </div>
+
+                    <!-- Lessons List -->
+                    <div id="section-lessons-{{ sec_item.section.id }}" class="p-2 space-y-1 {% if sec_item.section.id != section.id %}hidden{% endif %}">
+                        {% for les_item in sec_item.lessons %}
+                        <a href="{% url 'learn_lesson' les_item.lesson.id %}" class="flex items-center justify-between px-3 py-2 rounded-xl text-xs transition-all {% if les_item.lesson.id == lesson.id %}bg-primary text-white font-semibold shadow-md shadow-primary/20{% else %}text-slate-400 hover:text-white hover:bg-white/5{% endif %}">
+                            <div class="flex items-center space-x-2 truncate">
+                                <span class="material-icons-round text-sm flex-shrink-0 {% if les_item.is_completed %}text-emerald-400{% elif les_item.lesson.id == lesson.id %}text-white{% else %}text-slate-500{% endif %}">
+                                    {% if les_item.is_completed %}check_circle{% elif les_item.lesson.id == lesson.id %}play_circle{% else %}radio_button_unchecked{% endif %}
+                                </span>
+                                <span class="truncate">{{ les_item.lesson.title }}</span>
+                            </div>
+                            <span class="text-[10px] opacity-60 ml-2">#{{ les_item.lesson.order }}</span>
+                        </a>
+                        {% endfor %}
+
+                        <!-- Section Quiz & Practice Quick Links -->
+                        <div class="pt-2 border-t border-white/5 mt-2 flex items-center justify-between px-2 text-[11px]">
+                            <a href="{% url 'learn_practice' sec_item.section.id %}" class="text-slate-400 hover:text-primary transition-colors flex items-center">
+                                <span class="material-icons-round text-xs mr-1">videocam</span> Practice
+                            </a>
+                            <a href="{% url 'learn_quiz' sec_item.section.id %}" class="text-purple-400 hover:text-purple-300 transition-colors flex items-center">
+                                <span class="material-icons-round text-xs mr-1">quiz</span> Section Quiz
+                            </a>
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// Video controls
+const video = document.getElementById('sign-video');
+const speedIndicator = document.getElementById('speed-indicator');
+const speeds = [0.5, 0.75, 1.0, 1.25];
+let speedIndex = 2;
+
+function toggleSpeed() {
+    if (!video) return;
+    speedIndex = (speedIndex + 1) % speeds.length;
+    video.playbackRate = speeds[speedIndex];
+    speedIndicator.textContent = speeds[speedIndex].toFixed(1) + 'x';
+}
+
+function replayVideo() {
+    if (!video) return;
+    video.currentTime = 0;
+    video.play();
+}
+
+function toggleSectionAccordion(secId) {
+    const el = document.getElementById('section-lessons-' + secId);
+    const icon = document.getElementById('accordion-icon-' + secId);
+    if (el) {
+        el.classList.toggle('hidden');
+        if (icon) icon.classList.toggle('rotate-180');
+    }
+}
+
+// Mark lesson complete AJAX
+async function toggleLessonComplete(lessonId) {
+    const btn = document.getElementById('complete-btn');
+    const icon = document.getElementById('complete-icon');
+    const text = document.getElementById('complete-text');
+    
+    try {
+        const response = await fetch(`/learn/lesson/${lessonId}/complete/`, {
+            method: 'POST',
+            headers: {
+                'X-CSRFToken': getCookie('csrftoken'),
+                'Content-Type': 'application/json'
+            }
+        });
+        const data = await response.json();
+        if (data.status === 'ok') {
+            if (data.is_completed) {
+                btn.className = 'w-full sm:w-auto inline-flex items-center justify-center px-5 py-2.5 rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-sm font-semibold transition-all';
+                icon.textContent = 'check_circle';
+                text.textContent = 'Completed';
+            } else {
+                btn.className = 'w-full sm:w-auto inline-flex items-center justify-center px-5 py-2.5 rounded-xl bg-primary hover:bg-primary/90 text-white shadow-lg shadow-primary/20 text-sm font-semibold transition-all';
+                icon.textContent = 'done';
+                text.textContent = 'Mark as Completed';
+            }
+
+            if (data.section_completed) {
+                // Flash subtle notification
+                console.log("Section completed!");
+            }
+        }
+    } catch (e) {
+        console.error('Error toggling completion:', e);
+    }
+}
+
+function getCookie(name) {
+    let cookieValue = null;
+    if (document.cookie && document.cookie !== '') {
+        const cookies = document.cookie.split(';');
+        for (let i = 0; i < cookies.length; i++) {
+            const cookie = cookies[i].trim();
+            if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                break;
+            }
+        }
+    }
+    return cookieValue;
+}
+</script>
+{% endblock %}

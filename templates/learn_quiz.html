@@ -1,0 +1,561 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Quiz: {{ section.title }} • SignAI Pro{% endblock %}
+
+{% block page_title %}{{ section.title }} Quiz{% endblock %}
+{% block page_subtitle %}Test your recognition and recall (60% required to pass){% endblock %}
+
+{% block header_content %}
+<div class="flex items-center justify-between w-full">
+    <div class="flex items-center space-x-2 text-xs font-semibold text-slate-400">
+        <a href="{% url 'learn_dashboard' %}" class="hover:text-primary transition-colors flex items-center">
+            <span class="material-icons-round text-sm mr-1">school</span> Course
+        </a>
+        <span class="text-slate-600">/</span>
+        <a href="{% url 'learn_section' section.id %}" class="hover:text-primary transition-colors">{{ section.title }}</a>
+        <span class="text-slate-600">/</span>
+        <span class="text-primary font-medium">Section {{ section.section_number }} Quiz</span>
+    </div>
+
+    <a href="{% url 'learn_dashboard' %}" class="text-slate-400 hover:text-white transition-colors p-1.5 rounded-xl hover:bg-white/5" title="Exit Quiz">
+        <span class="material-icons-round text-xl">close</span>
+    </a>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="max-w-2xl mx-auto py-2">
+    <!-- Top Progress Bar (Duolingo style) -->
+    <div class="mb-6 space-y-2">
+        <div class="flex items-center justify-between text-xs font-bold">
+            <span class="text-slate-300 flex items-center">
+                <span class="px-2 py-0.5 rounded-full bg-primary/20 text-primary text-[10px] uppercase font-bold mr-2">Section {{ section.section_number }}</span>
+                {{ section.title }}
+            </span>
+            <span id="question-tracker" class="text-slate-400 font-semibold tracking-wider">1 / 10</span>
+        </div>
+        <div class="w-full bg-white/10 rounded-full h-3 overflow-hidden p-0.5">
+            <div id="quiz-progress-bar" class="bg-gradient-to-r from-primary via-indigo-500 to-emerald-400 h-2 rounded-full transition-all duration-400" style="width: 10%;"></div>
+        </div>
+    </div>
+
+    <!-- Loading State Card -->
+    <div id="quiz-loading" class="glass-panel p-12 rounded-3xl border border-white/10 text-center space-y-4 shadow-2xl">
+        <div class="w-12 h-12 rounded-full border-4 border-primary border-t-transparent animate-spin mx-auto"></div>
+        <h3 class="text-base font-bold text-white">Preparing Section Questions...</h3>
+        <p class="text-xs text-slate-400">Loading verified lesson signs and distractors from {{ section.title }}.</p>
+    </div>
+
+    <!-- Active Exercise Card Container -->
+    <div id="exercise-card" class="glass-panel p-6 lg:p-8 rounded-3xl border border-white/10 shadow-2xl space-y-6 hidden relative overflow-hidden transition-all duration-300">
+        <!-- Exercise Type Header -->
+        <div class="flex items-center justify-between border-b border-white/5 pb-3">
+            <span id="exercise-badge" class="px-3 py-1 rounded-full bg-primary/15 text-primary border border-primary/25 text-[11px] font-bold uppercase tracking-wider flex items-center">
+                <span class="material-icons-round text-sm mr-1">quiz</span>
+                <span id="exercise-type-text">Sign Meaning</span>
+            </span>
+            <span id="speed-control-wrap" class="hidden">
+                <button type="button" onclick="togglePlaybackSpeed()" class="px-2 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-[11px] font-medium text-slate-300 border border-white/5">
+                    Speed: <span id="speed-val">1.0x</span>
+                </button>
+            </span>
+        </div>
+
+        <!-- Question Prompt -->
+        <div>
+            <h2 id="question-prompt" class="text-xl lg:text-2xl font-extrabold text-white tracking-tight leading-snug"></h2>
+        </div>
+
+        <!-- Media Container (Video Player for sign_to_meaning, type_answer, sequence_to_meaning) -->
+        <div id="media-container" class="hidden">
+            <div class="w-full max-w-md mx-auto aspect-video bg-black/60 rounded-2xl overflow-hidden border border-white/10 flex items-center justify-center relative shadow-inner">
+                <video id="exercise-video" class="w-full h-full object-contain" autoplay loop muted playsinline controls>
+                    <source src="" type="video/mp4">
+                </video>
+            </div>
+        </div>
+
+        <!-- Dynamic Interaction Zone -->
+        <div id="interaction-zone" class="pt-2">
+            <!-- Will be dynamically populated for each question type -->
+        </div>
+
+        <!-- Bottom Feedback Panel (Initially hidden until [CHECK] is clicked) -->
+        <div id="feedback-panel" class="hidden rounded-2xl p-5 border transition-all duration-300 space-y-3">
+            <div class="flex items-center space-x-2.5">
+                <span id="feedback-icon" class="material-icons-round text-2xl"></span>
+                <h4 id="feedback-title" class="text-base font-bold"></h4>
+            </div>
+            <p id="feedback-explanation" class="text-xs text-slate-300 leading-relaxed whitespace-pre-line"></p>
+            <div id="feedback-replay-wrap" class="hidden pt-1">
+                <button type="button" onclick="replayFeedbackVideo()" class="inline-flex items-center px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white text-xs font-medium border border-white/10 transition-colors">
+                    <span class="material-icons-round text-sm mr-1">replay</span> Replay Correct Sign
+                </button>
+            </div>
+        </div>
+
+        <!-- Action Button Bar -->
+        <div class="pt-4 border-t border-white/5 flex items-center justify-end">
+            <!-- Check Button (shown before answer check) -->
+            <button id="check-btn" type="button" onclick="checkCurrentAnswer()" disabled class="w-full sm:w-auto px-8 py-3.5 rounded-xl bg-primary disabled:opacity-40 disabled:cursor-not-allowed hover:bg-primary/90 text-white font-bold text-sm shadow-xl shadow-primary/25 transition-all flex items-center justify-center">
+                <span>Check Answer</span>
+                <span class="material-icons-round text-base ml-1.5">check</span>
+            </button>
+
+            <!-- Continue Button (shown after answer check) -->
+            <button id="continue-btn" type="button" onclick="continueToNext()" class="hidden w-full sm:w-auto px-8 py-3.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white font-bold text-sm shadow-xl shadow-emerald-500/25 transition-all flex items-center justify-center">
+                <span id="continue-btn-text">Continue</span>
+                <span class="material-icons-round text-base ml-1.5">arrow_forward</span>
+            </button>
+        </div>
+    </div>
+</div>
+
+<script>
+const sectionId = {{ section.id }};
+const checkUrl = "{{ check_url }}";
+const submitUrl = "{{ submit_url }}";
+const resultsUrl = "{{ results_url }}";
+
+let questions = [];
+let currentIndex = 0;
+let currentAnswer = null; // Stored user selection/input
+let checked = false;
+let currentFeedback = null;
+let currentSpeed = 1.0;
+
+// Matching State variables
+let selectedWord = null;
+let userMatchedPairs = {}; // { word: sign_id }
+
+// Fetch quiz from server on load
+window.addEventListener('DOMContentLoaded', async () => {
+    try {
+        const resp = await fetch(`/learn/section/${sectionId}/quiz/api/`);
+        const data = await resp.json();
+        if (data.status === 'ok' && data.questions && data.questions.length > 0) {
+            questions = data.questions;
+            document.getElementById('quiz-loading').classList.add('hidden');
+            document.getElementById('exercise-card').classList.remove('hidden');
+            renderExercise(0);
+        } else {
+            document.getElementById('quiz-loading').innerHTML = `
+                <div class="text-red-400 p-4">
+                    <span class="material-icons-round text-3xl">error_outline</span>
+                    <p class="text-sm font-semibold mt-2">Could not generate section quiz. Please refresh or try again.</p>
+                </div>
+            `;
+        }
+    } catch (err) {
+        console.error('Quiz load error:', err);
+        document.getElementById('quiz-loading').innerHTML = `
+            <div class="text-red-400 p-4">
+                <p class="text-sm font-semibold">Network connection error loading quiz.</p>
+            </div>
+        `;
+    }
+});
+
+function renderExercise(index) {
+    currentIndex = index;
+    checked = false;
+    currentAnswer = null;
+    currentFeedback = null;
+    selectedWord = null;
+    userMatchedPairs = {};
+
+    const q = questions[index];
+    const totalQ = questions.length;
+
+    // Trackers
+    document.getElementById('question-tracker').textContent = `${index + 1} / ${totalQ}`;
+    document.getElementById('quiz-progress-bar').style.width = `${((index + 1) / totalQ) * 100}%`;
+
+    // Type Badge
+    const badgeText = document.getElementById('exercise-type-text');
+    const badgeMap = {
+        'sign_to_meaning': 'Sign → Meaning',
+        'meaning_to_sign': 'Word → Sign',
+        'type_answer': 'Type Answer',
+        'matching': 'Pair Matching',
+        'complete_sentence': 'Complete Sentence',
+        'sequence_to_meaning': 'Sequence Meaning',
+        'sentence_to_sequence': 'Sentence Sequence',
+        'dialogue': 'Conversation'
+    };
+    badgeText.textContent = badgeMap[q.type] || 'Exercise';
+
+    // Prompt
+    document.getElementById('question-prompt').textContent = q.prompt;
+
+    // Reset button states
+    const checkBtn = document.getElementById('check-btn');
+    const contBtn = document.getElementById('continue-btn');
+    checkBtn.classList.remove('hidden');
+    checkBtn.disabled = true;
+    contBtn.classList.add('hidden');
+
+    // Reset feedback panel
+    const feedbackPanel = document.getElementById('feedback-panel');
+    feedbackPanel.className = 'hidden rounded-2xl p-5 border transition-all duration-300 space-y-3';
+    document.getElementById('feedback-replay-wrap').classList.add('hidden');
+
+    // Video Handling
+    const mediaContainer = document.getElementById('media-container');
+    const videoEl = document.getElementById('exercise-video');
+    const speedWrap = document.getElementById('speed-control-wrap');
+
+    if (q.media && q.media.has_video && q.media.video_url) {
+        videoEl.src = q.media.video_url;
+        videoEl.playbackRate = currentSpeed;
+        videoEl.load();
+        videoEl.play().catch(e => console.log('Autoplay:', e));
+        mediaContainer.classList.remove('hidden');
+        speedWrap.classList.remove('hidden');
+    } else {
+        videoEl.pause();
+        mediaContainer.classList.add('hidden');
+        speedWrap.classList.add('hidden');
+    }
+
+    // Render interactive exercise zone
+    const zone = document.getElementById('interaction-zone');
+    zone.innerHTML = '';
+
+    if (q.type === 'sign_to_meaning' || q.type === 'complete_sentence' || q.type === 'sequence_to_meaning' || q.type === 'dialogue' || q.type === 'sentence_to_sequence') {
+        // Standard Multiple Choice Cards (Options: 4 text cards)
+        const grid = document.createElement('div');
+        grid.className = 'grid grid-cols-1 sm:grid-cols-2 gap-3.5';
+
+        q.options.forEach((optText, optIdx) => {
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.id = `opt-card-${optIdx}`;
+            btn.className = 'opt-card p-4 rounded-2xl bg-white/5 hover:bg-white/10 border border-white/10 text-left transition-all flex items-center justify-between group';
+            btn.onclick = () => selectOption(optIdx, optText);
+
+            btn.innerHTML = `
+                <div class="flex items-center space-x-3">
+                    <span class="w-8 h-8 rounded-xl bg-white/10 text-slate-300 text-xs font-extrabold flex items-center justify-center group-hover:bg-primary group-hover:text-white transition-colors">
+                        ${String.fromCharCode(65 + optIdx)}
+                    </span>
+                    <span class="font-medium text-white text-sm leading-snug">${optText}</span>
+                </div>
+                <span class="material-icons-round text-slate-500 text-base opacity-0 group-hover:opacity-100 transition-opacity">radio_button_unchecked</span>
+            `;
+            grid.appendChild(btn);
+        });
+        zone.appendChild(grid);
+
+    } else if (q.type === 'meaning_to_sign') {
+        // 4 Visual Sign Options (2x2 grid of video preview cards)
+        const grid = document.createElement('div');
+        grid.className = 'grid grid-cols-2 gap-4';
+
+        q.options.forEach((optItem, optIdx) => {
+            const card = document.createElement('div');
+            card.id = `opt-video-${optIdx}`;
+            card.className = 'opt-video-card p-3 rounded-2xl bg-white/5 hover:bg-white/10 border border-white/10 cursor-pointer transition-all flex flex-col justify-between group';
+            card.onclick = () => selectVisualOption(optIdx, optItem);
+
+            card.innerHTML = `
+                <div class="w-full aspect-video bg-black/50 rounded-xl overflow-hidden mb-2 border border-white/5 flex items-center justify-center">
+                    <video class="w-full h-full object-contain pointer-events-none" autoplay loop muted playsinline>
+                        <source src="${optItem.video_url}" type="video/mp4">
+                    </video>
+                </div>
+                <div class="flex items-center justify-between px-1">
+                    <span class="text-xs font-bold text-slate-300 group-hover:text-white">Sign ${String.fromCharCode(65 + optIdx)}</span>
+                    <span class="material-icons-round text-slate-500 text-sm group-hover:text-primary">radio_button_unchecked</span>
+                </div>
+            `;
+            grid.appendChild(card);
+        });
+        zone.appendChild(grid);
+
+    } else if (q.type === 'type_answer') {
+        // Typing text input
+        const wrap = document.createElement('div');
+        wrap.className = 'space-y-2 max-w-md mx-auto';
+        wrap.innerHTML = `
+            <div class="relative">
+                <input type="text" id="type-answer-input" autocomplete="off" placeholder="Type your answer..."
+                       class="w-full px-5 py-4 rounded-2xl bg-white/5 border border-white/15 text-white placeholder-slate-500 text-base font-medium focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all text-center">
+            </div>
+            <p class="text-[11px] text-slate-500 text-center">Type in lowercase or uppercase • Press Enter to check</p>
+        `;
+        zone.appendChild(wrap);
+
+        const inp = document.getElementById('type-answer-input');
+        inp.focus();
+        inp.addEventListener('input', (e) => {
+            currentAnswer = e.target.value.trim();
+            checkBtn.disabled = (currentAnswer.length === 0);
+        });
+        inp.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !checkBtn.disabled) {
+                checkCurrentAnswer();
+            }
+        });
+
+    } else if (q.type === 'matching') {
+        // Tap-to-Match interactive pairing (4 words on left, 4 signs on right)
+        const matchData = q.matching_data || {};
+        const wrap = document.createElement('div');
+        wrap.className = 'grid grid-cols-2 gap-4';
+
+        // Left Column: Words
+        const wordsCol = document.createElement('div');
+        wordsCol.className = 'space-y-3';
+        (matchData.words || []).forEach(w => {
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.id = `match-word-${w}`;
+            btn.className = 'w-full p-3.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-sm font-semibold text-white transition-all text-center';
+            btn.textContent = w;
+            btn.onclick = () => selectMatchWord(w);
+            wordsCol.appendChild(btn);
+        });
+
+        // Right Column: Signs
+        const signsCol = document.createElement('div');
+        signsCol.className = 'space-y-3';
+        (matchData.signs || []).forEach(s => {
+            const card = document.createElement('div');
+            card.id = `match-sign-${s.id}`;
+            card.className = 'p-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 cursor-pointer transition-all flex items-center justify-center';
+            card.onclick = () => selectMatchSign(s.id);
+            card.innerHTML = `
+                <div class="w-24 h-16 bg-black/40 rounded-lg overflow-hidden flex items-center justify-center">
+                    <video class="w-full h-full object-contain pointer-events-none" autoplay loop muted playsinline>
+                        <source src="${s.video_url}" type="video/mp4">
+                    </video>
+                </div>
+            `;
+            signsCol.appendChild(card);
+        });
+
+        wrap.appendChild(wordsCol);
+        wrap.appendChild(signsCol);
+        zone.appendChild(wrap);
+    }
+}
+
+// Option Selection handlers (Do NOT show color or reveal answers before check!)
+function selectOption(optIdx, optText) {
+    if (checked) return;
+    currentAnswer = optText;
+
+    document.querySelectorAll('.opt-card').forEach((card, idx) => {
+        if (idx === optIdx) {
+            card.className = 'opt-card p-4 rounded-2xl bg-primary/20 border-2 border-primary text-left transition-all flex items-center justify-between';
+            const icon = card.querySelector('.material-icons-round');
+            if (icon) {
+                icon.textContent = 'check_circle';
+                icon.className = 'material-icons-round text-primary text-base opacity-100';
+            }
+        } else {
+            card.className = 'opt-card p-4 rounded-2xl bg-white/5 hover:bg-white/10 border border-white/10 text-left transition-all flex items-center justify-between group';
+            const icon = card.querySelector('.material-icons-round');
+            if (icon) {
+                icon.textContent = 'radio_button_unchecked';
+                icon.className = 'material-icons-round text-slate-500 text-base opacity-0 group-hover:opacity-100 transition-opacity';
+            }
+        }
+    });
+
+    document.getElementById('check-btn').disabled = false;
+}
+
+function selectVisualOption(optIdx, optItem) {
+    if (checked) return;
+    currentAnswer = optIdx;
+
+    document.querySelectorAll('.opt-video-card').forEach((card, idx) => {
+        if (idx === optIdx) {
+            card.className = 'opt-video-card p-3 rounded-2xl bg-primary/20 border-2 border-primary cursor-pointer transition-all flex flex-col justify-between';
+            const icon = card.querySelector('.material-icons-round');
+            if (icon) {
+                icon.textContent = 'check_circle';
+                icon.className = 'material-icons-round text-primary text-sm';
+            }
+        } else {
+            card.className = 'opt-video-card p-3 rounded-2xl bg-white/5 hover:bg-white/10 border border-white/10 cursor-pointer transition-all flex flex-col justify-between group';
+            const icon = card.querySelector('.material-icons-round');
+            if (icon) {
+                icon.textContent = 'radio_button_unchecked';
+                icon.className = 'material-icons-round text-slate-500 text-sm group-hover:text-primary';
+            }
+        }
+    });
+
+    document.getElementById('check-btn').disabled = false;
+}
+
+// Matching logic
+function selectMatchWord(word) {
+    if (checked) return;
+    selectedWord = word;
+    document.querySelectorAll('[id^="match-word-"]').forEach(el => {
+        el.classList.remove('border-primary', 'bg-primary/20');
+    });
+    const el = document.getElementById(`match-word-${word}`);
+    if (el) el.classList.add('border-primary', 'bg-primary/20');
+}
+
+function selectMatchSign(signId) {
+    if (checked || !selectedWord) return;
+    userMatchedPairs[selectedWord] = String(signId);
+
+    // Style the paired items with matching connected highlight
+    const wordEl = document.getElementById(`match-word-${selectedWord}`);
+    const signEl = document.getElementById(`match-sign-${signId}`);
+    if (wordEl) wordEl.className = 'w-full p-3.5 rounded-xl bg-indigo-500/20 border-2 border-indigo-400 text-sm font-bold text-white transition-all text-center';
+    if (signEl) signEl.className = 'p-2 rounded-xl bg-indigo-500/20 border-2 border-indigo-400 cursor-pointer transition-all flex items-center justify-center';
+
+    selectedWord = null;
+
+    // If 4 pairs matched, enable Check button
+    const totalWords = (questions[currentIndex].matching_data.words || []).length;
+    if (Object.keys(userMatchedPairs).length === totalWords) {
+        currentAnswer = userMatchedPairs;
+        document.getElementById('check-btn').disabled = false;
+    }
+}
+
+// Check Answer (Calls Backend API)
+async function checkCurrentAnswer() {
+    if (checked || currentAnswer === null) return;
+
+    checked = true;
+    const checkBtn = document.getElementById('check-btn');
+    checkBtn.disabled = true;
+
+    try {
+        const resp = await fetch(`/learn/section/${sectionId}/quiz/check-answer/`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCookie('csrftoken')
+            },
+            body: JSON.stringify({
+                question_index: currentIndex,
+                user_answer: currentAnswer
+            })
+        });
+        const result = await resp.json();
+        currentFeedback = result;
+
+        // Render Feedback Panel
+        renderFeedback(result);
+    } catch (e) {
+        console.error('Answer check error:', e);
+    }
+}
+
+function renderFeedback(result) {
+    const feedbackPanel = document.getElementById('feedback-panel');
+    const feedbackIcon = document.getElementById('feedback-icon');
+    const feedbackTitle = document.getElementById('feedback-title');
+    const feedbackExplanation = document.getElementById('feedback-explanation');
+    const replayWrap = document.getElementById('feedback-replay-wrap');
+
+    const checkBtn = document.getElementById('check-btn');
+    const contBtn = document.getElementById('continue-btn');
+    checkBtn.classList.add('hidden');
+    contBtn.classList.remove('hidden');
+
+    if (result.is_correct) {
+        feedbackPanel.className = 'rounded-2xl p-5 border border-emerald-500/40 bg-emerald-500/10 text-emerald-400 space-y-2 block shadow-lg shadow-emerald-500/10';
+        feedbackIcon.textContent = 'check_circle';
+        feedbackTitle.textContent = '✓ Correct! Great job.';
+    } else {
+        feedbackPanel.className = 'rounded-2xl p-5 border border-rose-500/40 bg-rose-500/10 text-rose-400 space-y-2 block shadow-lg shadow-rose-500/10';
+        feedbackIcon.textContent = 'cancel';
+        feedbackTitle.innerHTML = `✕ Not quite. <span class="text-xs text-white block mt-1 font-semibold">Correct answer: ${result.correct_answer}</span>`;
+        if (result.sign_url) {
+            replayWrap.classList.remove('hidden');
+        }
+    }
+
+    feedbackExplanation.textContent = result.explanation || '';
+
+    // If last question, adjust button text
+    if (currentIndex + 1 >= questions.length) {
+        document.getElementById('continue-btn-text').textContent = 'Finish Quiz';
+    }
+}
+
+function replayFeedbackVideo() {
+    if (currentFeedback && currentFeedback.sign_url) {
+        const mediaContainer = document.getElementById('media-container');
+        const videoEl = document.getElementById('exercise-video');
+        videoEl.src = currentFeedback.sign_url;
+        videoEl.load();
+        videoEl.play();
+        mediaContainer.classList.remove('hidden');
+        mediaContainer.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+}
+
+function togglePlaybackSpeed() {
+    const videoEl = document.getElementById('exercise-video');
+    const speedVal = document.getElementById('speed-val');
+    const speeds = [0.5, 0.75, 1.0];
+    let idx = speeds.indexOf(currentSpeed);
+    idx = (idx + 1) % speeds.length;
+    currentSpeed = speeds[idx];
+    speedVal.textContent = currentSpeed.toFixed(2) + 'x';
+    if (videoEl) videoEl.playbackRate = currentSpeed;
+}
+
+// Continue to Next Exercise or Submit
+async function continueToNext() {
+    if (currentIndex + 1 < questions.length) {
+        renderExercise(currentIndex + 1);
+        document.getElementById('exercise-card').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    } else {
+        // Complete Quiz -> Submit
+        const contBtn = document.getElementById('continue-btn');
+        contBtn.disabled = true;
+        document.getElementById('continue-btn-text').textContent = 'Calculating Score...';
+
+        try {
+            const resp = await fetch(submitUrl, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': getCookie('csrftoken')
+                },
+                body: JSON.stringify({ time_taken: '01:30' })
+            });
+            const data = await resp.json();
+            if (data.status === 'ok') {
+                window.location.href = resultsUrl;
+            } else {
+                window.location.href = resultsUrl;
+            }
+        } catch (e) {
+            console.error('Submission error:', e);
+            window.location.href = resultsUrl;
+        }
+    }
+}
+
+function getCookie(name) {
+    let cookieValue = null;
+    if (document.cookie && document.cookie !== '') {
+        const cookies = document.cookie.split(';');
+        for (let i = 0; i < cookies.length; i++) {
+            const cookie = cookies[i].trim();
+            if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                break;
+            }
+        }
+    }
+    return cookieValue;
+}
+</script>
+{% endblock %}

@@ -1,0 +1,28 @@
+from django.urls import path
+from . import views
+
+urlpatterns = [
+    path('dashboard/', views.dashboard_view, name='dashboard'),
+    path('upload/', views.upload_ppt_view, name='upload'),
+    path('summary/<int:session_id>/', views.summary_view, name='summary'),
+    path('quiz/<int:session_id>/', views.quiz_view, name='quiz'),
+    path('quiz/<int:session_id>/api/', views.quiz_data_api, name='quiz_data_api'),
+    path('quiz/<int:session_id>/results/', views.quiz_submit_view, name='quiz_results'),
+    path('quiz/<int:session_id>/save-result/', views.quiz_save_result, name='quiz_save_result'),
+    path('live-converter/', views.animation_view, name='animation'),
+    path('history/', views.history_view, name='history'),
+
+    # Learn Sign Language Feature
+    path('learn/', views.learn_course_dashboard, name='learn_dashboard'),
+    path('learn/lesson/<int:lesson_id>/', views.learn_lesson_view, name='learn_lesson'),
+    path('learn/lesson/<int:lesson_id>/complete/', views.learn_complete_lesson_api, name='learn_complete_lesson'),
+    path('learn/section/<int:section_id>/', views.learn_section_view, name='learn_section'),
+    path('learn/section/<int:section_id>/completed/', views.learn_section_completed_view, name='learn_section_completed'),
+    path('learn/section/<int:section_id>/practice/', views.learn_practice_view, name='learn_practice'),
+    path('learn/section/<int:section_id>/practice/search/', views.learn_practice_search_api, name='learn_practice_search'),
+    path('learn/section/<int:section_id>/quiz/', views.learn_quiz_view, name='learn_quiz'),
+    path('learn/section/<int:section_id>/quiz/api/', views.learn_quiz_api, name='learn_quiz_api'),
+    path('learn/section/<int:section_id>/quiz/check-answer/', views.learn_quiz_check_answer_api, name='learn_quiz_check_answer'),
+    path('learn/section/<int:section_id>/quiz/submit/', views.learn_quiz_submit_api, name='learn_quiz_submit'),
+    path('learn/section/<int:section_id>/results/', views.learn_quiz_results_view, name='learn_quiz_results'),
+]

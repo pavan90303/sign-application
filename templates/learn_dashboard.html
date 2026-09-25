@@ -1,0 +1,171 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block page_title %}Indian Sign Language Course{% endblock %}
+{% block page_subtitle %}Beginner to Advanced • Master Indian Sign Language step by step{% endblock %}
+
+{% block header_content %}
+<div class="flex flex-col">
+    <div class="flex items-center space-x-2 text-xs font-semibold text-primary uppercase tracking-wider mb-1">
+        <span class="material-icons-round text-base">school</span>
+        <span>Interactive Course Curriculum</span>
+    </div>
+    <h1 class="text-3xl font-bold text-white tracking-tight">Indian Sign Language Course</h1>
+    <p class="text-slate-400 text-sm mt-1">Beginner to Advanced &bull; Complete structured lessons, practice signs, and test your knowledge.</p>
+</div>
+{% endblock %}
+
+{% block content %}
+<!-- Course Progress Header -->
+<div class="glass-panel p-6 lg:p-8 rounded-3xl relative overflow-hidden border border-white/10 shadow-2xl">
+    <div class="absolute -right-20 -bottom-20 w-80 h-80 bg-primary/10 rounded-full blur-3xl pointer-events-none"></div>
+
+    <div class="relative z-10 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
+        <div class="space-y-4 max-w-2xl">
+            <div class="flex items-center space-x-3">
+                <div class="w-12 h-12 rounded-2xl bg-gradient-to-br from-primary to-indigo-600 flex items-center justify-center text-white shadow-lg shadow-primary/25">
+                    <span class="material-icons-round text-2xl">sign_language</span>
+                </div>
+                <div>
+                    <h2 class="text-xl font-bold text-white">Your Learning Journey</h2>
+                    <p class="text-sm text-slate-400">Track your milestones across all 5 sections.</p>
+                </div>
+            </div>
+
+            <!-- Stats Bar -->
+            <div class="grid grid-cols-3 gap-4">
+                <div class="p-3.5 rounded-2xl bg-white/5 border border-white/5">
+                    <p class="text-xs text-slate-400 font-medium">Overall Progress</p>
+                    <p class="text-2xl font-bold text-primary mt-0.5">{{ progress.progress_percent }}%</p>
+                </div>
+                <div class="p-3.5 rounded-2xl bg-white/5 border border-white/5">
+                    <p class="text-xs text-slate-400 font-medium">Completed Lessons</p>
+                    <p class="text-2xl font-bold text-white mt-0.5">{{ progress.completed_lessons }} <span class="text-xs font-normal text-slate-500">/ {{ progress.total_lessons }}</span></p>
+                </div>
+                <div class="p-3.5 rounded-2xl bg-white/5 border border-white/5">
+                    <p class="text-xs text-slate-400 font-medium">Sections Mastered</p>
+                    <p class="text-2xl font-bold text-white mt-0.5">{{ progress.completed_sections }} <span class="text-xs font-normal text-slate-500">/ {{ progress.total_sections }}</span></p>
+                </div>
+            </div>
+
+            <!-- Progress Bar -->
+            <div class="space-y-1.5">
+                <div class="flex justify-between text-xs text-slate-400 font-medium">
+                    <span>Curriculum Completion</span>
+                    <span>{{ progress.progress_percent }}%</span>
+                </div>
+                <div class="w-full bg-white/10 rounded-full h-3 overflow-hidden">
+                    <div class="bg-gradient-to-r from-primary via-indigo-500 to-purple-500 h-3 rounded-full transition-all duration-700" style="width: {{ progress.progress_percent }}%;"></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="flex flex-col sm:flex-row lg:flex-col gap-3 min-w-[220px]">
+            {% if progress.next_lesson %}
+            <a href="{% url 'learn_lesson' progress.next_lesson.id %}" class="inline-flex items-center justify-center px-6 py-4 rounded-xl bg-primary hover:bg-primary/90 text-white font-semibold shadow-xl shadow-primary/25 transition-all text-center group">
+                <span class="material-icons-round text-xl mr-2 group-hover:translate-x-0.5 transition-transform">play_arrow</span>
+                Continue Learning
+            </a>
+            {% else %}
+            <div class="inline-flex items-center justify-center px-6 py-4 rounded-xl bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 font-semibold text-center">
+                <span class="material-icons-round text-xl mr-2">emoji_events</span>
+                All Lessons Completed!
+            </div>
+            {% endif %}
+            
+            <a href="{% url 'dashboard' %}" class="inline-flex items-center justify-center px-6 py-3 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white font-medium border border-white/10 transition-all text-center">
+                <span class="material-icons-round text-lg mr-2">arrow_back</span>
+                Back to Dashboard
+            </a>
+        </div>
+    </div>
+</div>
+
+<!-- Section Cards List -->
+<div class="space-y-6 mt-8">
+    <div class="flex items-center justify-between">
+        <h3 class="text-xl font-bold text-white tracking-tight flex items-center">
+            <span class="material-icons-round text-primary mr-2">view_list</span>
+            Curriculum Sections (5)
+        </h3>
+        <span class="text-xs text-slate-400">Unlock sections sequentially by completing lessons and scoring &ge;60% on quizzes</span>
+    </div>
+
+    <div class="space-y-4">
+        {% for item in progress.section_progress_list %}
+        <div class="glass-panel p-6 rounded-2xl border transition-all duration-300 relative overflow-hidden {% if item.is_unlocked %}border-white/10 glass-card-hover{% else %}border-white/5 opacity-60 bg-white/[0.02]{% endif %}">
+            <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
+                <!-- Section Left: Info -->
+                <div class="flex items-start space-x-4">
+                    <div class="w-14 h-14 rounded-2xl flex-shrink-0 flex items-center justify-center text-2xl font-bold shadow-lg {% if item.is_completed %}bg-emerald-500/20 text-emerald-400 border border-emerald-500/30{% elif item.is_unlocked %}bg-primary/20 text-primary border border-primary/30{% else %}bg-slate-800 text-slate-500 border border-white/5{% endif %}">
+                        {% if item.is_completed %}
+                        <span class="material-icons-round text-3xl">check_circle</span>
+                        {% elif item.is_unlocked %}
+                        <span class="material-icons-round text-2xl">{{ item.section.icon|default:'auto_stories' }}</span>
+                        {% else %}
+                        <span class="material-icons-round text-2xl">lock</span>
+                        {% endif %}
+                    </div>
+
+                    <div class="space-y-1.5 max-w-xl">
+                        <div class="flex items-center space-x-3">
+                            <span class="text-xs font-semibold px-2.5 py-0.5 rounded-full uppercase tracking-wider {% if item.is_completed %}bg-emerald-500/10 text-emerald-400 border border-emerald-500/20{% elif item.is_unlocked %}bg-primary/10 text-primary border border-primary/20{% else %}bg-white/5 text-slate-500 border border-white/5{% endif %}">
+                                Section {{ item.section.order }}
+                            </span>
+                            {% if item.quiz_passed %}
+                            <span class="inline-flex items-center text-xs font-medium text-emerald-400">
+                                <span class="material-icons-round text-xs mr-1">verified</span> Quiz Passed ({{ item.quiz_best_score|floatformat:0 }}%)
+                            </span>
+                            {% endif %}
+                        </div>
+
+                        <h4 class="text-lg font-bold text-white">{{ item.section.title }}</h4>
+                        <p class="text-sm text-slate-400 leading-relaxed">{{ item.section.description }}</p>
+
+                        <!-- Progress Bar & Count -->
+                        <div class="pt-2 flex items-center space-x-4 max-w-md">
+                            <div class="flex-1 bg-white/10 rounded-full h-2 overflow-hidden">
+                                <div class="{% if item.is_completed %}bg-emerald-500{% else %}bg-primary{% endif %} h-2 rounded-full transition-all duration-500" style="width: {{ item.completion_percent }}%;"></div>
+                            </div>
+                            <span class="text-xs text-slate-400 font-medium whitespace-nowrap">
+                                {{ item.completed_lessons }} / {{ item.total_lessons }} lessons ({{ item.completion_percent }}%)
+                            </span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Section Right: Actions -->
+                <div class="flex flex-wrap lg:flex-nowrap items-center gap-3 lg:justify-end">
+                    {% if item.is_unlocked %}
+                        <!-- Start / Continue Lessons -->
+                        {% if item.first_lesson %}
+                        <a href="{% url 'learn_lesson' item.first_lesson.id %}" class="inline-flex items-center px-4 py-2.5 rounded-xl bg-primary hover:bg-primary/90 text-white text-sm font-semibold shadow-md shadow-primary/20 transition-all">
+                            <span class="material-icons-round text-base mr-1.5">play_arrow</span>
+                            {% if item.completed_lessons > 0 %}Continue{% else %}Start Section{% endif %}
+                        </a>
+                        {% endif %}
+
+                        <!-- Practice Signs (Optional) -->
+                        <a href="{% url 'learn_practice' item.section.id %}" class="inline-flex items-center px-4 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white text-sm font-medium border border-white/10 transition-all">
+                            <span class="material-icons-round text-base mr-1.5">videocam</span>
+                            Practice Signs
+                        </a>
+
+                        <!-- Take Quiz -->
+                        <a href="{% url 'learn_quiz' item.section.id %}" class="inline-flex items-center px-4 py-2.5 rounded-xl {% if item.quiz_passed %}bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/20{% else %}bg-purple-500/10 hover:bg-purple-500/20 text-purple-400 border border-purple-500/20{% endif %} text-sm font-medium transition-all">
+                            <span class="material-icons-round text-base mr-1.5">quiz</span>
+                            {% if item.quiz_passed %}Retake Quiz{% else %}Section Quiz{% endif %}
+                        </a>
+                    {% else %}
+                        <div class="inline-flex items-center px-4 py-2.5 rounded-xl bg-white/5 text-slate-500 text-sm font-medium border border-white/5 cursor-not-allowed">
+                            <span class="material-icons-round text-base mr-1.5">lock</span>
+                            Locked &bull; Complete previous section &amp; pass quiz
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endblock %}

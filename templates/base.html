@@ -1,0 +1,234 @@
+{% load static %}
+<!DOCTYPE html>
+<html class="dark" lang="en">
+
+<head>
+  <meta charset="utf-8" />
+  <meta content="width=device-width, initial-scale=1.0" name="viewport" />
+  <title>{% block title %}Sign Language AI{% endblock %}</title>
+  <!-- Google Fonts -->
+  <link href="https://fonts.googleapis.com" rel="preconnect" />
+  <link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&amp;display=swap"
+    rel="stylesheet" />
+  <!-- Material Icons -->
+  <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Round" rel="stylesheet" />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap"
+    rel="stylesheet" />
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+  <script id="tailwind-config">
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          colors: {
+            "primary": "#5f72ec",
+            "background-light": "#f6f6f8",
+            "background-dark": "#111321",
+            "glass-border": "rgba(255, 255, 255, 0.08)",
+            "glass-surface": "rgba(30, 41, 59, 0.4)",
+          },
+          fontFamily: {
+            "display": ["Inter", "sans-serif"]
+          },
+          borderRadius: { "DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px" },
+          backdropBlur: {
+            'xs': '2px',
+          }
+        },
+      },
+    }
+  </script>
+  <style>
+    /* Custom Glassmorphism Utilities */
+    .glass-panel {
+      background: linear-gradient(135deg, rgba(255, 255, 255, 0.05) 0%, rgba(255, 255, 255, 0.01) 100%);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border: 1px solid var(--glass-border);
+      box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
+    }
+
+    .glass-sidebar {
+      background: linear-gradient(180deg, rgba(17, 19, 33, 0.8) 0%, rgba(17, 19, 33, 0.95) 100%);
+      backdrop-filter: blur(12px);
+      border-right: 1px solid var(--glass-border);
+    }
+
+    .glass-card-hover:hover {
+      background: linear-gradient(135deg, rgba(255, 255, 255, 0.1) 0%, rgba(255, 255, 255, 0.02) 100%);
+      border-color: rgba(95, 114, 236, 0.3);
+      transform: translateY(-2px);
+      box-shadow: 0 12px 40px -8px rgba(95, 114, 236, 0.15);
+    }
+
+    /* Ambient background glow */
+    .ambient-glow {
+      background: radial-gradient(circle at 50% 0%, rgba(95, 114, 236, 0.15), transparent 60%);
+      pointer-events: none;
+    }
+
+    /* Scrollbar */
+    .custom-scrollbar::-webkit-scrollbar {
+      width: 6px;
+    }
+
+    .custom-scrollbar::-webkit-scrollbar-track {
+      background: rgba(255, 255, 255, 0.05);
+    }
+
+    .custom-scrollbar::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.2);
+      border-radius: 3px;
+    }
+
+    .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+      background: rgba(255, 255, 255, 0.4);
+    }
+  </style>
+  {% block extra_css %}{% endblock %}
+</head>
+
+<body
+  class="bg-background-light dark:bg-background-dark text-slate-800 dark:text-slate-100 font-display min-h-screen overflow-hidden selection:bg-primary selection:text-white">
+  <!-- Ambient Lighting Effect -->
+  <div class="fixed inset-0 ambient-glow z-0"></div>
+  <div
+    class="fixed bottom-0 right-0 w-[500px] h-[500px] bg-primary/5 rounded-full blur-[120px] pointer-events-none z-0">
+  </div>
+
+  <div class="relative z-10 flex h-screen">
+    <!-- Sidebar Navigation -->
+    <aside
+      class="w-20 lg:w-72 flex-shrink-0 glass-sidebar flex flex-col justify-between transition-all duration-300 relative z-50">
+      <div>
+        <!-- Logo Area -->
+        <div class="h-20 flex items-center justify-center lg:justify-start lg:px-8 border-b border-white/5">
+          <a href="{% url 'home' %}" class="flex items-center relative z-10">
+            <div
+              class="w-10 h-10 rounded-xl bg-gradient-to-br from-primary to-indigo-600 flex items-center justify-center shadow-lg shadow-primary/20">
+              <span class="material-icons-round text-white text-xl">translate</span>
+            </div>
+            <span class="hidden lg:block ml-3 font-bold text-lg tracking-tight">SignAI Pro</span>
+          </a>
+        </div>
+
+        <!-- Nav Links -->
+        <nav class="mt-8 px-4 space-y-2 relative z-10">
+          <a class="flex items-center px-4 py-3 {% if request.resolver_match.url_name == 'dashboard' %}bg-primary/10 text-primary{% else %}text-slate-400 hover:text-white hover:bg-white/5{% endif %} rounded-xl transition-all group relative overflow-hidden z-10"
+            href="{% if user.is_authenticated %}{% url 'dashboard' %}{% else %}{% url 'home' %}{% endif %}">
+            <div class="absolute inset-0 bg-primary/10 opacity-0 group-hover:opacity-100 transition-opacity"></div>
+            <span
+              class="material-icons-round text-xl {% if request.resolver_match.url_name == 'dashboard' %}text-primary{% else %}group-hover:text-primary{% endif %} transition-colors relative z-10">dashboard</span>
+            <span class="hidden lg:block ml-3 font-medium relative z-10">Dashboard</span>
+          </a>
+
+          {% if user.is_authenticated %}
+          <a class="flex items-center px-4 py-3 {% if 'learn' in request.resolver_match.url_name %}bg-primary/10 text-primary{% else %}text-slate-400 hover:text-white hover:bg-white/5{% endif %} rounded-xl transition-all group relative overflow-hidden z-10"
+            href="{% url 'learn_dashboard' %}">
+            <div class="absolute inset-0 bg-primary/10 opacity-0 group-hover:opacity-100 transition-opacity"></div>
+            <span
+              class="material-icons-round text-xl {% if 'learn' in request.resolver_match.url_name %}text-primary{% else %}group-hover:text-primary{% endif %} transition-colors relative z-10">school</span>
+            <span class="hidden lg:block ml-3 font-medium relative z-10">Learn Sign Language</span>
+          </a>
+
+          <a class="flex items-center px-4 py-3 {% if request.resolver_match.url_name == 'upload' %}bg-primary/10 text-primary{% else %}text-slate-400 hover:text-white hover:bg-white/5{% endif %} rounded-xl transition-all group relative overflow-hidden z-10"
+            href="{% url 'upload' %}">
+            <div class="absolute inset-0 bg-primary/10 opacity-0 group-hover:opacity-100 transition-opacity"></div>
+            <span
+              class="material-icons-round text-xl {% if request.resolver_match.url_name == 'upload' %}text-primary{% else %}group-hover:text-primary{% endif %} transition-colors relative z-10">cloud_upload</span>
+            <span class="hidden lg:block ml-3 font-medium relative z-10">New Upload</span>
+          </a>
+
+          <a class="flex items-center px-4 py-3 {% if request.resolver_match.url_name == 'animation' %}bg-primary/10 text-primary{% else %}text-slate-400 hover:text-white hover:bg-white/5{% endif %} rounded-xl transition-all group relative overflow-hidden z-10"
+            href="{% url 'animation' %}">
+            <div class="absolute inset-0 bg-primary/10 opacity-0 group-hover:opacity-100 transition-opacity"></div>
+            <span
+              class="material-icons-round text-xl {% if request.resolver_match.url_name == 'animation' %}text-primary{% else %}group-hover:text-primary{% endif %} transition-colors relative z-10">videocam</span>
+            <span class="hidden lg:block ml-3 font-medium relative z-10">Live Converter</span>
+          </a>
+          {% else %}
+          <a class="flex items-center px-4 py-3 {% if 'login' in request.path %}bg-primary/10 text-primary{% else %}text-slate-400 hover:text-white hover:bg-white/5{% endif %} rounded-xl transition-all group relative overflow-hidden z-10"
+            href="{% url 'login' %}">
+            <div class="absolute inset-0 bg-primary/10 opacity-0 group-hover:opacity-100 transition-opacity"></div>
+            <span
+              class="material-icons-round text-xl {% if 'login' in request.path %}text-primary{% else %}group-hover:text-primary{% endif %} transition-colors relative z-10">login</span>
+            <span class="hidden lg:block ml-3 font-medium relative z-10">Login</span>
+          </a>
+          <a class="flex items-center px-4 py-3 {% if 'signup' in request.path %}bg-primary/10 text-primary{% else %}text-slate-400 hover:text-white hover:bg-white/5{% endif %} rounded-xl transition-all group relative overflow-hidden z-10"
+            href="{% url 'signup' %}">
+            <div class="absolute inset-0 bg-primary/10 opacity-0 group-hover:opacity-100 transition-opacity"></div>
+            <span
+              class="material-icons-round text-xl {% if 'signup' in request.path %}text-primary{% else %}group-hover:text-primary{% endif %} transition-colors relative z-10">person_add</span>
+            <span class="hidden lg:block ml-3 font-medium relative z-10">Sign Up</span>
+          </a>
+          {% endif %}
+
+        </nav>
+      </div>
+
+      <!-- User Profile & Settings -->
+      <div class="p-4 border-t border-white/5 relative z-10">
+        {% if user.is_authenticated %}
+        <a class="flex items-center px-4 py-3 text-slate-400 hover:text-white hover:bg-white/5 rounded-xl transition-all mb-2 group relative z-10"
+          href="{% url 'logout' %}">
+          <span class="material-icons-round text-xl group-hover:text-primary transition-colors">logout</span>
+          <span class="hidden lg:block ml-3 font-medium">Logout</span>
+        </a>
+        <div class="mt-4 flex items-center p-2 rounded-xl bg-white/5 border border-white/5">
+          <div
+            class="w-10 h-10 rounded-lg bg-primary/20 flex items-center justify-center text-primary border border-white/10">
+            <span class="material-icons-round">person</span>
+          </div>
+          <div class="hidden lg:block ml-3 overflow-hidden">
+            <p class="text-sm font-semibold text-white truncate">{{ user.username }}</p>
+            <p class="text-xs text-primary">Member</p>
+          </div>
+        </div>
+        {% endif %}
+      </div>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="flex-1 flex flex-col overflow-hidden relative z-0">
+      <!-- Top Bar (Mobile/Tablet only trigger or Search) -->
+      <header class="h-20 flex items-center justify-between px-8 lg:px-12 pt-4">
+        {% block header_content %}
+        <div class="flex flex-col">
+          <h1 class="text-3xl font-bold text-white tracking-tight">{% block page_title %}Welcome{% endblock %}</h1>
+          <p class="text-slate-400 text-sm mt-1">{% block page_subtitle %}Start your journey today{% endblock %}</p>
+        </div>
+        {% endblock %}
+
+        <div class="flex items-center space-x-4">
+          <button
+            class="w-10 h-10 rounded-full bg-white/5 hover:bg-white/10 border border-white/5 flex items-center justify-center text-slate-300 transition-colors relative">
+            <span class="material-icons-round text-xl">notifications</span>
+            <span class="absolute top-2 right-2.5 w-2 h-2 bg-primary rounded-full"></span>
+          </button>
+        </div>
+      </header>
+
+      <!-- Scrollable Content -->
+      <div class="flex-1 overflow-y-auto p-8 lg:p-12 pb-24 space-y-8 custom-scrollbar">
+        {% if messages %}
+        {% for message in messages %}
+        <div
+          class="glass-panel p-4 mb-4 rounded-xl border-l-4 {% if message.tags == 'error' %}border-red-500 bg-red-500/10{% else %}border-emerald-500 bg-emerald-500/10{% endif %} text-white">
+          {{ message }}
+        </div>
+        {% endfor %}
+        {% endif %}
+
+        {% block content %}
+        {% endblock %}
+      </div>
+    </main>
+  </div>
+
+  {% block extra_js %}{% endblock %}
+</body>
+
+</html>

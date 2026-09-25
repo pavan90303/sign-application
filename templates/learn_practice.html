@@ -1,0 +1,338 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Practice Signs • {{ section.title }} • SignAI Pro{% endblock %}
+
+{% block page_title %}Sign Practice Studio{% endblock %}
+{% block page_subtitle %}{{ section.title }} • Optional visual self-practice with live webcam{% endblock %}
+
+{% block header_content %}
+<div class="flex items-center space-x-2 text-xs font-semibold text-slate-400">
+    <a href="{% url 'learn_dashboard' %}" class="hover:text-primary transition-colors flex items-center">
+        <span class="material-icons-round text-sm mr-1">school</span> Course
+    </a>
+    <span class="text-slate-600">/</span>
+    <a href="{% url 'learn_section' section.id %}" class="hover:text-primary transition-colors">{{ section.title }}</a>
+    <span class="text-slate-600">/</span>
+    <span class="text-primary font-medium">Practice Studio</span>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    <!-- Search and Quick Filter Bar -->
+    <div class="glass-panel p-6 rounded-3xl border border-white/10 shadow-xl space-y-4">
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div>
+                <h2 class="text-xl font-bold text-white flex items-center">
+                    <span class="material-icons-round text-primary mr-2">search</span>
+                    Select Sign to Practice
+                </h2>
+                <p class="text-xs text-slate-400 mt-0.5">Search or pick any sign from {{ section.title }} to display the expected animation.</p>
+            </div>
+
+            <!-- Search Input Box -->
+            <div class="relative min-w-[280px] max-w-md w-full">
+                <span class="material-icons-round absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-lg">search</span>
+                <input type="text" id="sign-search-input" placeholder="Search signs in this section..." 
+                       class="w-full pl-10 pr-4 py-2.5 rounded-xl bg-white/5 border border-white/10 text-white placeholder-slate-500 text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all"
+                       oninput="handleSignSearch(this.value)">
+                <!-- Search Suggestions Dropdown -->
+                <div id="search-results-dropdown" class="absolute left-0 right-0 top-full mt-2 bg-slate-900/95 border border-white/10 rounded-xl shadow-2xl z-50 max-h-60 overflow-y-auto hidden custom-scrollbar"></div>
+            </div>
+        </div>
+
+        <!-- Quick Sign Pills -->
+        <div class="border-t border-white/5 pt-3">
+            <p class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-2">Available Signs in {{ section.title }}:</p>
+            <div class="flex flex-wrap gap-2 max-h-24 overflow-y-auto custom-scrollbar pr-1">
+                {% for l in lessons %}
+                <button onclick="selectSign({{ l.id }}, '{{ l.title|escapejs }}', '{% if l.video_file %}{% static l.video_file %}{% endif %}', '{{ l.description|escapejs }}')" 
+                        id="pill-{{ l.id }}"
+                        class="sign-pill px-3 py-1.5 rounded-xl text-xs font-medium border transition-all {% if initial_lesson and initial_lesson.id == l.id %}bg-primary text-white border-primary shadow-md shadow-primary/25{% else %}bg-white/5 hover:bg-white/10 text-slate-300 border-white/5{% endif %}">
+                    {{ l.title }}
+                </button>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Side-by-Side Practice Arena (Stacked on mobile/tablet) -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 items-stretch">
+        <!-- Left: Expected Sign Reference -->
+        <div class="glass-panel p-6 rounded-3xl border border-white/10 flex flex-col justify-between shadow-2xl">
+            <div>
+                <div class="flex items-center justify-between mb-4">
+                    <div class="flex items-center space-x-2">
+                        <span class="w-8 h-8 rounded-lg bg-primary/20 text-primary flex items-center justify-center">
+                            <span class="material-icons-round text-lg">play_circle</span>
+                        </span>
+                        <div>
+                            <span class="text-[11px] font-semibold text-primary uppercase tracking-wider block">Reference Video</span>
+                            <h3 id="current-sign-title" class="text-lg font-bold text-white leading-tight">
+                                {% if initial_lesson %}{{ initial_lesson.title }}{% else %}Select a Sign{% endif %}
+                            </h3>
+                        </div>
+                    </div>
+
+                    <div class="flex items-center space-x-2">
+                        <button onclick="restartReferenceVideo()" class="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 border border-white/5 transition-all" title="Replay">
+                            <span class="material-icons-round text-base">replay</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Video Frame -->
+                <div class="relative w-full aspect-video bg-black/60 rounded-2xl overflow-hidden border border-white/10 flex items-center justify-center">
+                    <video id="expected-sign-video" class="w-full h-full object-contain {% if not initial_video_exists %}hidden{% endif %}" autoplay loop muted playsinline controls>
+                        {% if initial_video_exists and initial_video_url %}
+                        <source src="{{ initial_video_url }}" type="video/mp4">
+                        {% endif %}
+                    </video>
+
+                    <div id="missing-video-alert" class="p-6 text-center space-y-2 {% if initial_video_exists %}hidden{% endif %}">
+                        <span class="material-icons-round text-amber-400 text-3xl">motion_photos_off</span>
+                        <p class="text-sm font-semibold text-white">Sign animation not available yet.</p>
+                        <p class="text-xs text-slate-400 max-w-xs mx-auto">This sign is scheduled for animation recording.</p>
+                    </div>
+                </div>
+
+                <!-- Sign Tip / Description -->
+                <div class="mt-4 p-4 rounded-2xl bg-white/5 border border-white/5">
+                    <h4 class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1 flex items-center">
+                        <span class="material-icons-round text-xs mr-1 text-primary">lightbulb</span> How to Form This Sign
+                    </h4>
+                    <p id="current-sign-desc" class="text-xs text-slate-300 leading-relaxed">
+                        {% if initial_lesson %}{{ initial_lesson.description }}{% else %}Select any sign above to see how to practice it.{% endif %}
+                    </p>
+                </div>
+            </div>
+
+            <div class="pt-4 text-xs text-slate-500 text-center">
+                Observe hand position, finger movements, and facial expression.
+            </div>
+        </div>
+
+        <!-- Right: Live Webcam Self-Practice -->
+        <div class="glass-panel p-6 rounded-3xl border border-white/10 flex flex-col justify-between shadow-2xl">
+            <div>
+                <div class="flex items-center justify-between mb-4">
+                    <div class="flex items-center space-x-2">
+                        <span class="w-8 h-8 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center">
+                            <span class="material-icons-round text-lg">videocam</span>
+                        </span>
+                        <div>
+                            <span class="text-[11px] font-semibold text-emerald-400 uppercase tracking-wider block">Live Camera</span>
+                            <h3 class="text-lg font-bold text-white leading-tight">Your Practice Stream</h3>
+                        </div>
+                    </div>
+
+                    <!-- Camera Status Badge -->
+                    <div id="camera-badge" class="inline-flex items-center space-x-1.5 px-3 py-1 rounded-full bg-white/5 border border-white/5 text-xs text-slate-400 font-medium">
+                        <span id="camera-dot" class="w-2 h-2 rounded-full bg-slate-500"></span>
+                        <span id="camera-status-text">Camera Idle</span>
+                    </div>
+                </div>
+
+                <!-- Webcam Video Frame -->
+                <div class="relative w-full aspect-video bg-black/60 rounded-2xl overflow-hidden border border-white/10 flex items-center justify-center">
+                    <video id="live-webcam" class="w-full h-full object-cover -scale-x-100 hidden" autoplay playsinline muted></video>
+
+                    <div id="webcam-placeholder" class="text-center p-6 space-y-3">
+                        <div class="w-14 h-14 rounded-2xl bg-white/5 text-slate-400 flex items-center justify-center mx-auto border border-white/5">
+                            <span class="material-icons-round text-3xl">videocam_off</span>
+                        </div>
+                        <div>
+                            <h4 class="text-sm font-semibold text-white">Camera is currently turned off</h4>
+                            <p class="text-xs text-slate-400 mt-1 max-w-xs mx-auto">
+                                Click "Start Webcam" below to mirror and compare your sign with the reference video.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Live Camera Controls -->
+                <div class="mt-4 flex items-center justify-between gap-3">
+                    <button id="webcam-toggle-btn" onclick="toggleWebcam()" class="flex-1 inline-flex items-center justify-center px-4 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-semibold shadow-lg shadow-emerald-500/20 transition-all">
+                        <span id="webcam-btn-icon" class="material-icons-round text-base mr-1.5">videocam</span>
+                        <span id="webcam-btn-text">Start Webcam</span>
+                    </button>
+                    <button id="mirror-btn" onclick="toggleMirror()" class="px-3 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 border border-white/5 text-xs font-medium transition-all" title="Toggle Mirror Flip">
+                        <span class="material-icons-round text-base">flip</span>
+                    </button>
+                </div>
+            </div>
+
+            <div class="pt-4 border-t border-white/5 mt-4 flex items-center justify-between text-xs text-slate-400">
+                <span class="flex items-center"><span class="material-icons-round text-xs mr-1 text-slate-500">lock</span> Camera runs locally in your browser</span>
+                <span class="text-slate-500">Practice is self-guided</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Navigation Footer (Take Quiz or Return) -->
+    <div class="glass-panel p-6 rounded-3xl border border-white/10 flex flex-col sm:flex-row items-center justify-between gap-4">
+        <div>
+            <h4 class="text-sm font-bold text-white">Done practicing?</h4>
+            <p class="text-xs text-slate-400">Take the Section Quiz to test your knowledge and unlock the next section.</p>
+        </div>
+
+        <div class="flex items-center space-x-3 w-full sm:w-auto">
+            <a href="{% url 'learn_dashboard' %}" class="flex-1 sm:flex-initial inline-flex items-center justify-center px-4 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 text-xs font-medium border border-white/5 transition-all">
+                <span class="material-icons-round text-sm mr-1">map</span> Course Map
+            </a>
+            <a href="{% url 'learn_quiz' section.id %}" class="flex-1 sm:flex-initial inline-flex items-center justify-center px-5 py-2.5 rounded-xl bg-primary hover:bg-primary/90 text-white text-xs font-semibold shadow-lg shadow-primary/25 transition-all">
+                <span class="material-icons-round text-sm mr-1">quiz</span> Take Section Quiz
+            </a>
+        </div>
+    </div>
+</div>
+
+<script>
+// Sign Selection & Reference Video Logic
+const sectionId = {{ section.id }};
+const videoEl = document.getElementById('expected-sign-video');
+const missingAlertEl = document.getElementById('missing-video-alert');
+const signTitleEl = document.getElementById('current-sign-title');
+const signDescEl = document.getElementById('current-sign-desc');
+
+function selectSign(lessonId, title, videoUrl, description) {
+    signTitleEl.textContent = title;
+    signDescEl.textContent = description || 'Practice forming this sign with steady hand movements.';
+    
+    // Update pills styling
+    document.querySelectorAll('.sign-pill').forEach(pill => {
+        pill.className = 'sign-pill px-3 py-1.5 rounded-xl text-xs font-medium border transition-all bg-white/5 hover:bg-white/10 text-slate-300 border-white/5';
+    });
+    const activePill = document.getElementById('pill-' + lessonId);
+    if (activePill) {
+        activePill.className = 'sign-pill px-3 py-1.5 rounded-xl text-xs font-medium border transition-all bg-primary text-white border-primary shadow-md shadow-primary/25';
+    }
+
+    // Update video
+    if (videoUrl && videoUrl.trim() !== '') {
+        videoEl.classList.remove('hidden');
+        missingAlertEl.classList.add('hidden');
+        videoEl.src = videoUrl;
+        videoEl.load();
+        videoEl.play().catch(e => console.log('Autoplay prevented:', e));
+    } else {
+        videoEl.pause();
+        videoEl.classList.add('hidden');
+        missingAlertEl.classList.remove('hidden');
+    }
+
+    // Close search dropdown
+    document.getElementById('search-results-dropdown').classList.add('hidden');
+}
+
+function restartReferenceVideo() {
+    if (videoEl && !videoEl.classList.contains('hidden')) {
+        videoEl.currentTime = 0;
+        videoEl.play();
+    }
+}
+
+// Search signs within section
+let searchTimeout = null;
+function handleSignSearch(query) {
+    clearTimeout(searchTimeout);
+    const dropdown = document.getElementById('search-results-dropdown');
+    
+    if (!query || query.trim() === '') {
+        dropdown.classList.add('hidden');
+        dropdown.innerHTML = '';
+        return;
+    }
+
+    searchTimeout = setTimeout(async () => {
+        try {
+            const resp = await fetch(`/learn/section/${sectionId}/practice/search/?q=` + encodeURIComponent(query));
+            const data = await resp.json();
+            
+            if (data.results && data.results.length > 0) {
+                dropdown.innerHTML = data.results.map(item => `
+                    <div class="px-4 py-2.5 hover:bg-white/10 cursor-pointer border-b border-white/5 last:border-0 flex items-center justify-between"
+                         onclick="selectSign(${item.id}, '${item.title.replace(/'/g, "\\'")}', '${item.video_url || ''}', '${(item.description || '').replace(/'/g, "\\'")}')">
+                        <span class="text-white text-xs font-semibold">${item.title}</span>
+                        <span class="text-[10px] text-slate-400">${item.has_video ? 'Video Available' : 'Notes Only'}</span>
+                    </div>
+                `).join('');
+                dropdown.classList.remove('hidden');
+            } else {
+                dropdown.innerHTML = `<div class="px-4 py-3 text-xs text-slate-400 text-center">No matching signs found in this section.</div>`;
+                dropdown.classList.remove('hidden');
+            }
+        } catch (e) {
+            console.error('Search error:', e);
+        }
+    }, 200);
+}
+
+// Webcam integration
+let webcamStream = null;
+let isMirrored = true;
+const webcamVideo = document.getElementById('live-webcam');
+const webcamPlaceholder = document.getElementById('webcam-placeholder');
+const webcamBtn = document.getElementById('webcam-toggle-btn');
+const webcamBtnIcon = document.getElementById('webcam-btn-icon');
+const webcamBtnText = document.getElementById('webcam-btn-text');
+const cameraDot = document.getElementById('camera-dot');
+const cameraStatusText = document.getElementById('camera-status-text');
+
+async function toggleWebcam() {
+    if (webcamStream) {
+        // Stop webcam
+        webcamStream.getTracks().forEach(track => track.stop());
+        webcamStream = null;
+        webcamVideo.srcObject = null;
+        webcamVideo.classList.add('hidden');
+        webcamPlaceholder.classList.remove('hidden');
+
+        webcamBtn.className = 'flex-1 inline-flex items-center justify-center px-4 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-semibold shadow-lg shadow-emerald-500/20 transition-all';
+        webcamBtnIcon.textContent = 'videocam';
+        webcamBtnText.textContent = 'Start Webcam';
+
+        cameraDot.className = 'w-2 h-2 rounded-full bg-slate-500';
+        cameraStatusText.textContent = 'Camera Idle';
+    } else {
+        // Request webcam access
+        try {
+            webcamStream = await navigator.mediaDevices.getUserMedia({
+                video: { width: { ideal: 1280 }, height: { ideal: 720 } },
+                audio: false
+            });
+            webcamVideo.srcObject = webcamStream;
+            webcamVideo.classList.remove('hidden');
+            webcamPlaceholder.classList.add('hidden');
+
+            webcamBtn.className = 'flex-1 inline-flex items-center justify-center px-4 py-2.5 rounded-xl bg-red-500/20 hover:bg-red-500/30 text-red-400 border border-red-500/30 text-xs font-semibold transition-all';
+            webcamBtnIcon.textContent = 'videocam_off';
+            webcamBtnText.textContent = 'Stop Webcam';
+
+            cameraDot.className = 'w-2 h-2 rounded-full bg-emerald-400 animate-pulse';
+            cameraStatusText.textContent = 'Camera Active';
+        } catch (err) {
+            console.error('Webcam permission error:', err);
+            alert('Could not access webcam. Please ensure camera permissions are enabled in your browser.');
+        }
+    }
+}
+
+function toggleMirror() {
+    isMirrored = !isMirrored;
+    if (isMirrored) {
+        webcamVideo.classList.add('-scale-x-100');
+    } else {
+        webcamVideo.classList.remove('-scale-x-100');
+    }
+}
+
+// Clean up webcam on page leave
+window.addEventListener('beforeunload', () => {
+    if (webcamStream) {
+        webcamStream.getTracks().forEach(track => track.stop());
+    }
+});
+</script>
+{% endblock %}

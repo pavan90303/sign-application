@@ -1,0 +1,228 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block page_title %}Live Sign Converter{% endblock %}
+{% block page_subtitle %}Speak or type to generate instant sign language{% endblock %}
+
+{% block content %}
+<div class="h-[calc(100vh-12rem)] min-h-[600px] grid grid-cols-1 lg:grid-cols-12 gap-6 pb-2">
+
+	<!-- LEFT PANEL: Input & Controls -->
+	<div class="lg:col-span-4 xl:col-span-3 flex flex-col gap-6 h-full">
+		<!-- Mic / Input Card -->
+		<div
+			class="glass-panel p-8 rounded-3xl flex flex-col items-center justify-center text-center relative overflow-hidden group">
+			<div class="absolute inset-0 bg-gradient-to-b from-primary/5 to-transparent pointer-events-none"></div>
+
+			<!-- Mic Button with Ripple Effect -->
+			<div class="relative mb-8 cursor-pointer group/mic" onclick="record()">
+				<div
+					class="absolute inset-0 bg-primary/30 rounded-full animate-ping opacity-20 group-hover/mic:opacity-40">
+				</div>
+				<div
+					class="absolute inset-0 bg-primary/10 rounded-full scale-110 group-hover/mic:scale-125 transition-transform duration-500">
+				</div>
+				<div
+					class="w-24 h-24 rounded-full bg-gradient-to-br from-[#1e2130] to-[#11131f] border border-white/10 shadow-[0_0_30px_rgba(95,114,236,0.3)] flex items-center justify-center relative z-10 group-hover/mic:shadow-[0_0_50px_rgba(95,114,236,0.5)] transition-all duration-300 transform group-hover/mic:-translate-y-1">
+					<span
+						class="material-icons-round text-4xl text-primary group-hover/mic:text-white transition-colors">mic</span>
+				</div>
+			</div>
+
+			<p class="text-slate-400 text-sm mb-6 font-medium tracking-wide uppercase">Tap to Speak</p>
+
+			<form action="" method="post" class="w-full relative z-10">
+				{% csrf_token %}
+				<div class="relative group/input mb-6">
+					<input type="text" name="sen" id="speechToText" value="{{ text }}"
+						placeholder="Or type text here..."
+						class="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-slate-500 focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all text-center"
+						autocomplete="off">
+				</div>
+
+				<button type="submit"
+					class="w-full py-3.5 rounded-xl bg-gradient-to-r from-primary to-indigo-600 shadow-lg shadow-primary/25 text-white font-semibold tracking-wide hover:-translate-y-0.5 transition-all active:scale-95 flex items-center justify-center gap-2">
+					<span class="material-icons-round">translate</span>
+					Convert
+				</button>
+			</form>
+		</div>
+
+		<!-- Detected Keywords (Vertical List for Side Panel) -->
+		{% if text %}
+		<div class="glass-panel p-5 rounded-2xl flex-1 flex flex-col overflow-hidden">
+			<h3 class="text-sm font-bold text-white mb-4 flex items-center gap-2 uppercase tracking-wider">
+				<span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> Detected Keywords
+			</h3>
+			<div class="overflow-y-auto custom-scrollbar flex-1 space-y-2 pr-2" id="list">
+				{% for word in words %}
+				<div
+					class="keyword-badge p-3 rounded-xl bg-white/5 border border-white/5 flex items-center justify-between group hover:bg-white/10 transition-colors cursor-default">
+					<span class="text-slate-200 font-medium">{{ word }}</span>
+					<span
+						class="material-icons-round text-xs text-slate-500 group-hover:text-primary opacity-0 group-hover:opacity-100 transition-opacity">play_circle</span>
+				</div>
+				{% endfor %}
+			</div>
+
+			{% if not words %}
+			<div class="flex flex-col items-center justify-center flex-1 text-slate-500 text-sm">
+				<span class="material-icons-round text-3xl mb-2 opacity-50">short_text</span>
+				<p>No keywords found</p>
+			</div>
+			{% endif %}
+		</div>
+		{% endif %}
+	</div>
+
+	<!-- RIGHT PANEL: Avatar Display -->
+	<div class="lg:col-span-8 xl:col-span-9 h-full flex flex-col">
+		<div
+			class="glass-panel flex-1 rounded-3xl overflow-hidden relative flex items-center justify-center bg-[#0a0c16] border-white/10 shadow-2xl">
+			<!-- Grid Background -->
+			<div class="absolute inset-0 opacity-10"
+				style="background-image: linear-gradient(#4a5568 1px, transparent 1px), linear-gradient(90deg, #4a5568 1px, transparent 1px); background-size: 40px 40px;">
+			</div>
+
+			<!-- Video Container -->
+			<div
+				class="relative z-10 w-full max-w-4xl aspect-video rounded-2xl overflow-hidden shadow-2xl border border-white/5 bg-black">
+				<video id="videoPlayer" class="w-full h-full object-contain" preload="auto" playsinline>
+					<source src="" type="video/mp4">
+					Your browser does not support HTML5 video.
+				</video>
+
+				<!-- Overlay when idle or loading could go here -->
+				<div id="videoOverlay"
+					class="absolute inset-0 flex items-center justify-center bg-black/50 pointer-events-none opacity-0 transition-opacity">
+					<span class="material-icons-round text-white text-6xl opacity-50">smart_display</span>
+				</div>
+			</div>
+
+			<!-- Playback Controls Floating Bar -->
+			<div
+				class="absolute bottom-8 left-1/2 -translate-x-1/2 px-6 py-3 rounded-full glass-panel flex items-center gap-6 z-20 shadow-xl border-t border-white/20">
+				<button class="text-slate-400 hover:text-white transition-colors" onclick="playPause()">
+					<span class="material-icons-round text-3xl" id="playPauseIcon">play_circle</span>
+				</button>
+				<div class="h-4 w-[1px] bg-white/10"></div>
+				<div class="flex items-center gap-4 text-xs font-mono text-slate-300">
+					<span id="currentWordDisplay">Waiting for input...</span>
+				</div>
+			</div>
+		</div>
+	</div>
+</div>
+
+<!-- Hidden Data for JS -->
+{% if words %}
+{{ words|json_script:"words_data" }}
+{% endif %}
+{% endblock %}
+
+{% block extra_js %}
+<script>
+	// Speech Recognition
+	function record() {
+		var recognition = new webkitSpeechRecognition();
+		recognition.lang = 'en-IN';
+		recognition.onresult = function (event) {
+			document.getElementById('speechToText').value = event.results[0][0].transcript;
+
+			// Optional: Auto-submit for smoother experience
+			// document.forms[0].submit(); 
+		}
+		recognition.start();
+	}
+
+	// Video Player Logic
+	const wordsDataElement = document.getElementById('words_data');
+	if (wordsDataElement) {
+		const wordsData = JSON.parse(wordsDataElement.textContent);
+		const badges = document.querySelectorAll('.keyword-badge');
+		const currentWordDisplay = document.getElementById('currentWordDisplay');
+		const videoPlayer = document.getElementById("videoPlayer");
+		const playPauseIcon = document.getElementById('playPauseIcon');
+
+		if (wordsData && wordsData.length > 0) {
+			var videoSource = wordsData.map(function (word) {
+				return "/static/" + word + ".mp4";
+			});
+
+			var i = 0;
+			var videoCount = videoSource.length;
+
+			function updateUI(index) {
+				// Highlight current badge
+				badges.forEach(b => {
+					b.classList.remove('bg-primary/20', 'border-primary/50', 'text-white');
+					b.classList.add('bg-white/5', 'border-white/5', 'text-slate-200');
+				});
+				if (badges[index]) {
+					badges[index].classList.remove('bg-white/5', 'border-white/5', 'text-slate-200');
+					badges[index].classList.add('bg-primary/20', 'border-primary/50', 'text-white');
+
+					// Scroll to badge
+					badges[index].scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+				}
+
+				// Update display text
+				if (wordsData[index]) {
+					currentWordDisplay.textContent = "Playing: " + wordsData[index];
+				}
+			}
+
+			function videoPlay(index) {
+				updateUI(index);
+				videoPlayer.setAttribute("src", videoSource[index]);
+				videoPlayer.load();
+				videoPlayer.play().catch(e => console.log("Autoplay prevented:", e));
+				playPauseIcon.textContent = "pause_circle";
+			}
+
+			videoPlayer.addEventListener('ended', function () {
+				i++;
+				if (i < videoCount) {
+					videoPlay(i);
+				} else {
+					videoPlayer.pause();
+					i = 0; // Reset for replay
+					playPauseIcon.textContent = "replay_circle_filled";
+
+					// Reset UI slightly
+					badges.forEach(b => {
+						b.classList.remove('bg-primary/20', 'border-primary/50', 'text-white');
+						b.classList.add('bg-white/5', 'border-white/5', 'text-slate-200');
+					});
+					currentWordDisplay.textContent = "Sequence Complete";
+				}
+			}, false);
+
+			// Manual Play/Pause
+			window.playPause = function () {
+				if (videoPlayer.paused) {
+					if (videoPlayer.getAttribute('src') === "") {
+						videoPlay(0); // Start from beginning if nothing loaded
+					} else {
+						videoPlayer.play();
+						playPauseIcon.textContent = "pause_circle";
+					}
+				} else {
+					videoPlayer.pause();
+					playPauseIcon.textContent = "play_circle";
+				}
+			};
+
+			// Auto play on load
+			if (videoCount > 0) {
+				videoPlay(0);
+			}
+		}
+	} else {
+		// Fallback or empty state handler
+		window.playPause = function () {
+			// No video to play
+		};
+	}
+</script>
+{% endblock %}

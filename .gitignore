@@ -1,0 +1,69 @@
+# ===========================
+# Python
+# ===========================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+eggs/
+*.egg
+
+# ===========================
+# Virtual Environments
+# ===========================
+.venv/
+venv/
+ENV/
+
+# ===========================
+# Django
+# ===========================
+db.sqlite3
+db.sqlite3-journal
+media/
+staticfiles/
+*.log
+
+# ===========================
+# Environment Variables
+# ===========================
+.env
+.env.local
+.env.production
+
+# ===========================
+# IDE / Editor
+# ===========================
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ===========================
+# OS Files
+# ===========================
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ===========================
+# NLTK Data (downloaded)
+# ===========================
+nltk_data/
+
+# ===========================
+# Stitch Design Mockups
+# ===========================
+stitch_*.html
+
+# ===========================
+# Debug / Test Artifacts
+# ===========================
+test_output*.txt
+server_log*.txt
+debug_error.log
+error.log
