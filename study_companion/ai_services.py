@@ -837,13 +837,16 @@ def extract_reference_knowledge_representation(reference_text: str, topic_hint: 
     if not reference_text or not reference_text.strip():
         return normalize_knowledge_schema({"topic": topic_hint or "General Concept", "concepts": [], "relationships": []})
 
-    logger.info(f"[CONCEPT ASSESSMENT] Topic: {topic_hint if topic_hint else 'Infer from text'}")
-    logger.info(f"[CONCEPT ASSESSMENT] Reference characters: {len(reference_text)}")
-    logger.info("[CONCEPT ASSESSMENT] Starting concept extraction...")
-
     client = get_gemini_client()
+    gemini_active = client is not None
+
+    logger.info("[CONCEPT] Reference received")
+    logger.info(f"[CONCEPT] Topic: {topic_hint if topic_hint else 'Infer from text'}")
+    logger.info(f"[CONCEPT] Characters: {len(reference_text)}")
+    logger.info(f"[CONCEPT] Gemini configured: {gemini_active}")
+
     if client:
-        logger.info("[AI] Calling Gemini API for reference knowledge representation...")
+        logger.info("[CONCEPT] Calling AI...")
         prompt = f"""
 Analyze the following educational reference text and extract a structured knowledge representation JSON.
 Topic hint: {topic_hint if topic_hint else 'Infer from text'}
@@ -919,13 +922,14 @@ Guidelines:
                     )
                 )
                 if response and response.text:
-                    logger.info(f"[AI] Response received from {model_name}.")
+                    logger.info("[CONCEPT] AI response received")
+                    logger.info("[CONCEPT] Parsing structured response...")
                     raw_json = response.text.strip()
                     raw_json = re.sub(r'^```json\s*', '', raw_json)
                     raw_json = re.sub(r'\s*```$', '', raw_json)
                     data = json.loads(raw_json)
                     normalized = normalize_knowledge_schema(data, topic_hint=topic_hint)
-                    logger.info(f"[RESULT] Concepts: {len(normalized['concepts'])}, Relationships: {len(normalized['relationships'])}")
+                    logger.info("[CONCEPT] Validation successful")
                     return normalized
             except Exception as e:
                 logger.warning(f"[AI Warning] Gemini generation error ({model_name}): {e}")
@@ -933,8 +937,9 @@ Guidelines:
     logger.info("[PARSE] Falling back to deterministic NLP extraction engine...")
     fallback_data = _deterministic_reference_extraction(reference_text, topic_hint=topic_hint)
     normalized = normalize_knowledge_schema(fallback_data, topic_hint=topic_hint)
-    logger.info(f"[RESULT] Fallback Concepts: {len(normalized['concepts'])}, Relationships: {len(normalized['relationships'])}")
+    logger.info(f"[CONCEPT] Validation successful (Fallback Concepts: {len(normalized['concepts'])}, Relationships: {len(normalized['relationships'])})")
     return normalized
+
 
 
 

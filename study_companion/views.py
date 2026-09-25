@@ -5,8 +5,10 @@ from .models import PPTUpload
 from .ai_services import extract_text_from_file, extract_ppt_text, summarize_text, generate_mcq
 import os
 import logging
+from django.conf import settings
 
 logger = logging.getLogger("study_companion.views")
+
 
 
 import json
@@ -926,23 +928,21 @@ def concept_assessment_view(request):
 def concept_assessment_save_reference_api(request):
     """
     POST API: Accepts reference text, uploaded PDF/PPT file, or course section selection.
+    Respects explicit source_type selection ('text', 'course', 'file') and never mixes unrelated sources.
     Extracts structured reference concept representation (nodes & relationships).
-    Enforces deterministic input priority, clear logging, and clean exception handling.
     """
     if request.method != 'POST':
         return JsonResponse({'status': 'error', 'message': 'POST required'}, status=405)
 
     try:
+        source_type = request.POST.get('source_type', 'text').strip().lower()
         topic = request.POST.get('topic', '').strip()
-        reference_text = request.POST.get('reference_text', '').strip()
-        section_id = request.POST.get('section_id')
-        reference_source = "text"
+        reference_text = ""
 
-        # Input Priority:
-        # 1. Uploaded File (if present)
-        # 2. Reference Textarea (if provided)
-        # 3. Selected Course Section
-        if 'file' in request.FILES and request.FILES['file'].name:
+        # Step 6 & 7: Explicit source_type routing (text, course, file)
+        if source_type == 'file':
+            if 'file' not in request.FILES or not request.FILES['file'].name:
+                return JsonResponse({'status': 'error', 'message': 'Please select a PDF or PPT file to upload.'}, status=400)
             uploaded_file = request.FILES['file']
             temp_dir = os.path.join(settings.MEDIA_ROOT, 'concept_uploads')
             os.makedirs(temp_dir, exist_ok=True)
@@ -951,55 +951,61 @@ def concept_assessment_save_reference_api(request):
                 for chunk in uploaded_file.chunks():
                     destination.write(chunk)
 
-            extracted = extract_text_from_file(file_path)
-            if extracted:
-                reference_text = extracted
-                reference_source = "document"
-                if not topic:
-                    topic = os.path.splitext(uploaded_file.name)[0].replace('_', ' ').title()
-            else:
+            reference_text = extract_text_from_file(file_path)
+            if not reference_text or not reference_text.strip():
                 return JsonResponse({'status': 'error', 'message': 'No readable text could be extracted from the uploaded document.'}, status=400)
+            if not topic:
+                topic = os.path.splitext(uploaded_file.name)[0].replace('_', ' ').title()
 
-        elif reference_text:
-            reference_source = "text"
-
-        elif section_id:
+        elif source_type == 'course':
+            section_id = request.POST.get('section_id')
+            if not section_id:
+                return JsonResponse({'status': 'error', 'message': 'Please select a course section.'}, status=400)
             sec = CourseSection.objects.filter(id=section_id).first()
-            if sec:
-                lessons_text = "\n".join([f"{l.title}: {l.explanation}" for l in sec.lessons.all()])
-                reference_text = f"Section {sec.section_number}: {sec.title}\n{sec.description}\n\nKey Concepts:\n{lessons_text}"
-                reference_source = "course_section"
-                if not topic:
-                    topic = sec.title
+            if not sec:
+                return JsonResponse({'status': 'error', 'message': 'Selected course section not found.'}, status=400)
+            lessons_text = "\n".join([f"{l.title}: {l.explanation}" for l in sec.lessons.all()])
+            reference_text = f"Section {sec.section_number}: {sec.title}\n{sec.description}\n\nKey Concepts:\n{lessons_text}"
+            topic = sec.title
 
-        if not reference_text or not reference_text.strip():
-            return JsonResponse({'status': 'error', 'message': 'Please enter reference concept text, upload a valid PDF/PPT file, or select a course section.'}, status=400)
+        else:
+            source_type = 'text'
+            reference_text = request.POST.get('reference_text', '').strip()
+            if not reference_text:
+                return JsonResponse({'status': 'error', 'message': 'Please enter reference concept text.'}, status=400)
+            if not topic:
+                topic = "General Concept"
 
-        if not topic:
-            topic = "General Concept"
+        # Step 4: Development Logging
+        from .ai_services import get_gemini_client, extract_reference_knowledge_representation
+        gemini_active = get_gemini_client() is not None
 
-        logger.info(f"[CONCEPT ASSESSMENT] Topic: {topic}")
-        logger.info(f"[CONCEPT ASSESSMENT] Reference source: {reference_source}, Length: {len(reference_text)} characters")
-        logger.info("[CONCEPT ASSESSMENT] Starting concept extraction...")
+        logger.info("[CONCEPT] Reference received")
+        logger.info(f"[CONCEPT] Topic: {topic}")
+        logger.info(f"[CONCEPT] Characters: {len(reference_text)}")
+        logger.info(f"[CONCEPT] Gemini configured: {gemini_active}")
 
-        from .ai_services import extract_reference_knowledge_representation
         ref_rep = extract_reference_knowledge_representation(reference_text, topic_hint=topic)
 
-        logger.info(f"[RESULT] Concepts extracted: {len(ref_rep.get('concepts', []))}, Relationships extracted: {len(ref_rep.get('relationships', []))}")
+        logger.info(f"[CONCEPT] Concepts extracted: {len(ref_rep.get('concepts', []))}, Relationships: {len(ref_rep.get('relationships', []))}")
 
         return JsonResponse({
             'status': 'ok',
             'topic': ref_rep.get('topic', topic),
             'reference_text': reference_text,
-            'reference_source': reference_source,
+            'source_type': source_type,
+            'reference_source': source_type,
             'reference_concepts_json': ref_rep
         })
+
     except Exception as e:
         logger.exception("Reference concept processing failed")
+        err_msg = f"Reference processing failed: {str(e)}" if settings.DEBUG else "Reference processing failed. Please try again."
         return JsonResponse({
             'status': 'error',
-            'message': f"Reference processing failed: {str(e)}"
+            'message': err_msg
         }, status=500)
+
 
 
 
