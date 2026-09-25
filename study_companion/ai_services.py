@@ -3,10 +3,14 @@ import re
 import json
 import random
 import string
+import logging
 from pptx import Presentation
 import google.genai as genai
 from google.genai import types
 from django.conf import settings
+
+logger = logging.getLogger("study_companion.ai_services")
+
 
 
 def clean_extracted_text(text: str) -> str:
@@ -654,20 +658,192 @@ def process_text_for_sign_language(text):
 # CONCEPT UNDERSTANDING ASSESSMENT AI & NLP ENGINE
 # =====================================================================
 
+def normalize_knowledge_schema(data: dict, topic_hint: str = "") -> dict:
+    """
+    Ensures knowledge representation dictionary conforms strictly to standard schema:
+    {
+      "topic": str,
+      "concepts": [{"id": str, "name": str, "importance": "core"}, ...],
+      "concepts_list": ["Name1", "Name2", ...],
+      "relationships": [{"source": str, "relation": str, "target": str}, ...]
+    }
+    """
+    if not isinstance(data, dict):
+        data = {}
+
+    topic = data.get("topic") or topic_hint or "General Concept"
+
+    raw_concepts = data.get("concepts", [])
+    concepts_formatted = []
+    concepts_list = []
+    seen_ids = set()
+
+    for item in raw_concepts:
+        if isinstance(item, dict):
+            c_name = str(item.get("name") or item.get("id") or "").strip()
+            c_id = str(item.get("id") or c_name).lower().replace(" ", "_").replace("-", "_")
+            c_imp = str(item.get("importance") or "core").lower()
+        else:
+            c_name = str(item).strip()
+            c_id = c_name.lower().replace(" ", "_").replace("-", "_")
+            c_imp = "core"
+
+        if c_name and c_id and c_id not in seen_ids:
+            seen_ids.add(c_id)
+            concepts_formatted.append({
+                "id": c_id,
+                "name": c_name.capitalize(),
+                "importance": c_imp if c_imp in ["core", "supporting", "optional"] else "core"
+            })
+            concepts_list.append(c_name.capitalize())
+
+    raw_rels = data.get("relationships", [])
+    relationships_formatted = []
+    seen_rels = set()
+
+    for r in raw_rels:
+        if isinstance(r, dict):
+            src = str(r.get("source", "")).lower().replace(" ", "_").replace("-", "_")
+            rel = str(r.get("relation", "")).strip().lower()
+            tgt = str(r.get("target", "")).lower().replace(" ", "_").replace("-", "_")
+
+            if src and rel and tgt and src != tgt:
+                rel_key = (src, rel, tgt)
+                if rel_key not in seen_rels:
+                    seen_rels.add(rel_key)
+                    relationships_formatted.append({
+                        "source": src,
+                        "relation": rel,
+                        "target": tgt
+                    })
+
+    return {
+        "topic": topic,
+        "concepts": concepts_formatted,
+        "concepts_list": concepts_list,
+        "relationships": relationships_formatted
+    }
+
+
+def _deterministic_reference_extraction(reference_text: str, topic_hint: str = "") -> dict:
+    """
+    Advanced deterministic NLP extraction for academic reference concepts & relationships.
+    Parses noun phrases, core academic terms, and verb relations without relying on LLMs.
+    """
+    text_clean = clean_extracted_text(reference_text)
+    lines = [l.strip() for l in text_clean.splitlines() if l.strip()]
+    topic = topic_hint or (lines[0][:40] if lines else "Academic Concept")
+
+    s_lower = text_clean.lower()
+    verbs_set = {
+        'use', 'uses', 'produce', 'produces', 'release', 'releases', 'convert', 'converts',
+        'absorb', 'absorbs', 'require', 'requires', 'create', 'creates', 'generate', 'generates',
+        'process', 'contains', 'supports', 'executes', 'operates', 'transfers'
+    }
+    stopwords = {
+        'the', 'and', 'for', 'that', 'this', 'with', 'from', 'are', 'was', 'were', 'have',
+        'has', 'had', 'been', 'which', 'using', 'into', 'used', 'can', 'may', 'such', 'their',
+        'they', 'them', 'these', 'those', 'also', 'when', 'what', 'where', 'how', 'each', 'all'
+    } | verbs_set
+
+    known_phrases = [
+        ('green plants', 'Green plants'),
+        ('carbon dioxide', 'Carbon dioxide'),
+        ('solar energy', 'Solar energy'),
+        ('light energy', 'Light energy'),
+        ('operating system', 'Operating system'),
+        ('virtual memory', 'Virtual memory'),
+        ('cpu scheduling', 'CPU scheduling'),
+        ('database management', 'Database management'),
+        ('relational database', 'Relational database'),
+        ('water cycle', 'Water cycle'),
+        ('machine learning', 'Machine learning'),
+        ('newton\'s laws', 'Newton\'s laws'),
+        ('cell structure', 'Cell structure'),
+        ('computer networks', 'Computer networks')
+    ]
+
+    raw_concepts = []
+    for term, label in known_phrases:
+        if term in s_lower and label not in raw_concepts:
+            raw_concepts.append(label)
+
+    words = re.findall(r'\b[a-zA-Z]{3,}\b', text_clean)
+    for w in words:
+        cap = w.capitalize()
+        if w.lower() not in stopwords and cap not in raw_concepts and not any(w.lower() in c.lower() for c in raw_concepts):
+            raw_concepts.append(cap)
+
+    raw_concepts = raw_concepts[:8]
+    concept_map = {c.lower(): c.lower().replace(' ', '_').replace('-', '_') for c in raw_concepts}
+    rels = []
+
+    sentences = re.split(r'(?<=[.!?])\s+', text_clean)
+    verb_patterns = [
+        (r'\buses?\b', 'use'),
+        (r'\bproduces?\b', 'produces'),
+        (r'\breleases?\b', 'releases'),
+        (r'\bconverts?\b', 'converts'),
+        (r'\babsorbs?\b', 'absorbs'),
+        (r'\brequires?\b', 'requires'),
+        (r'\bcreates?\b', 'creates'),
+        (r'\bgenerates?\b', 'generates')
+    ]
+
+    for sent in sentences:
+        sent_lower = sent.lower()
+        found_in_sent = [c for c in raw_concepts if c.lower() in sent_lower]
+        if len(found_in_sent) >= 2:
+            for pattern, verb_label in verb_patterns:
+                m = re.search(pattern, sent_lower)
+                if m:
+                    v_pos = m.start()
+                    left_concepts = [c for c in found_in_sent if sent_lower.find(c.lower()) < v_pos]
+                    right_concepts = [c for c in found_in_sent if sent_lower.find(c.lower()) > v_pos]
+
+                    for lc in left_concepts[:2]:
+                        for rc in right_concepts[:2]:
+                            if lc.lower() != rc.lower():
+                                rel_item = {
+                                    'source': concept_map[lc.lower()],
+                                    'relation': verb_label,
+                                    'target': concept_map[rc.lower()]
+                                }
+                                if rel_item not in rels:
+                                    rels.append(rel_item)
+
+    concepts_formatted = []
+    for c in raw_concepts:
+        cid = concept_map[c.lower()]
+        concepts_formatted.append({
+            'id': cid,
+            'name': c,
+            'importance': 'core'
+        })
+
+    return {
+        'topic': topic,
+        'concepts': concepts_formatted,
+        'concepts_list': raw_concepts,
+        'relationships': rels
+    }
+
+
 def extract_reference_knowledge_representation(reference_text: str, topic_hint: str = "") -> dict:
     """
     Extracts structured reference concept representation (nodes and directed relationships)
     from textbook/teacher content using Gemini API or validated NLP extraction.
     """
     if not reference_text or not reference_text.strip():
-        return {
-            "topic": topic_hint or "General Concept",
-            "concepts": [],
-            "relationships": []
-        }
+        return normalize_knowledge_schema({"topic": topic_hint or "General Concept", "concepts": [], "relationships": []})
+
+    logger.info(f"[CONCEPT ASSESSMENT] Topic: {topic_hint if topic_hint else 'Infer from text'}")
+    logger.info(f"[CONCEPT ASSESSMENT] Reference characters: {len(reference_text)}")
+    logger.info("[CONCEPT ASSESSMENT] Starting concept extraction...")
 
     client = get_gemini_client()
     if client:
+        logger.info("[AI] Calling Gemini API for reference knowledge representation...")
         prompt = f"""
 Analyze the following educational reference text and extract a structured knowledge representation JSON.
 Topic hint: {topic_hint if topic_hint else 'Infer from text'}
@@ -678,65 +854,88 @@ Reference Text:
 Return ONLY a single valid JSON object matching this exact schema:
 {{
   "topic": "Main Topic Name",
-  "concepts": ["concept1", "concept2", "concept3", ...],
+  "concepts": [
+    {{
+      "id": "concept_id_slug",
+      "name": "Concept Name",
+      "importance": "core"
+    }}
+  ],
   "relationships": [
     {{
-      "source": "concept1",
+      "source": "concept_id_slug_1",
       "relation": "action_or_verb",
-      "target": "concept2"
+      "target": "concept_id_slug_2"
     }}
   ]
 }}
 
 Guidelines:
-1. Extract 4-10 essential core concepts (lowercase, concise terms like "plants", "sunlight", "carbon dioxide", "glucose", "oxygen").
-2. Extract directed relationships (e.g. source="plants", relation="use", target="sunlight").
-3. Keep concepts atomic and clear. Do not include extra conversational text or markdown codeblocks outside JSON.
+1. Extract 4-10 essential core concepts (e.g. "photosynthesis", "green_plants", "sunlight", "water", "carbon_dioxide", "glucose", "oxygen").
+2. Extract directed relationships between these concepts.
+3. Return ONLY valid JSON.
 """
-        try:
-            response = client.models.generate_content(
-                model='gemini-2.5-flash',
-                contents=prompt,
-                config=types.GenerateContentConfig(
-                    temperature=0.1,
-                    response_mime_type="application/json"
+        schema = {
+            "type": "OBJECT",
+            "properties": {
+                "topic": {"type": "STRING"},
+                "concepts": {
+                    "type": "ARRAY",
+                    "items": {
+                        "type": "OBJECT",
+                        "properties": {
+                            "id": {"type": "STRING"},
+                            "name": {"type": "STRING"},
+                            "importance": {"type": "STRING", "enum": ["core", "supporting", "optional"]}
+                        },
+                        "required": ["id", "name", "importance"]
+                    }
+                },
+                "relationships": {
+                    "type": "ARRAY",
+                    "items": {
+                        "type": "OBJECT",
+                        "properties": {
+                            "source": {"type": "STRING"},
+                            "relation": {"type": "STRING"},
+                            "target": {"type": "STRING"}
+                        },
+                        "required": ["source", "relation", "target"]
+                    }
+                }
+            },
+            "required": ["topic", "concepts", "relationships"]
+        }
+
+        for model_name in ['gemini-2.5-flash', 'gemini-1.5-flash']:
+            try:
+                response = client.models.generate_content(
+                    model=model_name,
+                    contents=prompt,
+                    config=types.GenerateContentConfig(
+                        temperature=0.1,
+                        response_mime_type="application/json",
+                        response_schema=schema
+                    )
                 )
-            )
-            raw_json = response.text.strip()
-            # Strip markdown fence if present
-            raw_json = re.sub(r'^```json\s*', '', raw_json)
-            raw_json = re.sub(r'\s*```$', '', raw_json)
-            data = json.loads(raw_json)
-            if isinstance(data, dict) and "concepts" in data and "relationships" in data:
-                data["topic"] = data.get("topic") or topic_hint or "Educational Concept"
-                return data
-        except Exception as e:
-            print(f"[ConceptAssessment] Gemini extraction warning: {e}")
+                if response and response.text:
+                    logger.info(f"[AI] Response received from {model_name}.")
+                    raw_json = response.text.strip()
+                    raw_json = re.sub(r'^```json\s*', '', raw_json)
+                    raw_json = re.sub(r'\s*```$', '', raw_json)
+                    data = json.loads(raw_json)
+                    normalized = normalize_knowledge_schema(data, topic_hint=topic_hint)
+                    logger.info(f"[RESULT] Concepts: {len(normalized['concepts'])}, Relationships: {len(normalized['relationships'])}")
+                    return normalized
+            except Exception as e:
+                logger.warning(f"[AI Warning] Gemini generation error ({model_name}): {e}")
 
-    # Deterministic NLP Fallback if Gemini unavailable or failed
-    lines = [l.strip() for l in reference_text.splitlines() if l.strip()]
-    topic = topic_hint or (lines[0][:50] if lines else "General Concept")
-    words = re.findall(r'\b[a-zA-Z]{3,}\b', reference_text.lower())
-    stop_words = {'the', 'and', 'for', 'that', 'this', 'with', 'from', 'are', 'was', 'were', 'have', 'has', 'had', 'been', 'which', 'using', 'into', 'used', 'can', 'may', 'process', 'by', 'such'}
-    candidate_words = [w for w in words if w not in stop_words]
-    
-    from collections import Counter
-    freq = Counter(candidate_words)
-    top_concepts = [w for w, _ in freq.most_common(7)]
-    
-    relationships = []
-    if len(top_concepts) >= 2:
-        relationships.append({"source": top_concepts[0], "relation": "relates to", "target": top_concepts[1]})
-    if len(top_concepts) >= 3:
-        relationships.append({"source": top_concepts[0], "relation": "produces", "target": top_concepts[2]})
-    if len(top_concepts) >= 4:
-        relationships.append({"source": top_concepts[1], "relation": "uses", "target": top_concepts[3]})
+    logger.info("[PARSE] Falling back to deterministic NLP extraction engine...")
+    fallback_data = _deterministic_reference_extraction(reference_text, topic_hint=topic_hint)
+    normalized = normalize_knowledge_schema(fallback_data, topic_hint=topic_hint)
+    logger.info(f"[RESULT] Fallback Concepts: {len(normalized['concepts'])}, Relationships: {len(normalized['relationships'])}")
+    return normalized
 
-    return {
-        "topic": topic,
-        "concepts": top_concepts,
-        "relationships": relationships
-    }
 
 
 def reconstruct_isl_sequence_to_meaning(raw_units: list, topic: str = "") -> str:
@@ -844,13 +1043,28 @@ def perform_semantic_concept_comparison(reference_json: dict, student_json: dict
     Classifies concepts into Understood, Partially Understood, Missing, and Possible Misconception.
     Calculates grounded metrics: Concept Coverage, Relationship Accuracy, Overall Score.
     """
-    ref_concepts = [c.lower().strip() for c in reference_json.get("concepts", [])]
+    raw_ref = reference_json.get("concepts", [])
+    ref_concepts = []
+    for item in raw_ref:
+        if isinstance(item, dict):
+            ref_concepts.append(str(item.get("name") or item.get("id") or ""))
+        else:
+            ref_concepts.append(str(item))
+    ref_concepts = [c.lower().strip() for c in ref_concepts if c.strip()]
     ref_rels = reference_json.get("relationships", [])
     
-    stu_concepts = [c.lower().strip() for c in student_json.get("concepts", [])]
+    raw_stu = student_json.get("concepts", [])
+    stu_concepts = []
+    for item in raw_stu:
+        if isinstance(item, dict):
+            stu_concepts.append(str(item.get("name") or item.get("id") or ""))
+        else:
+            stu_concepts.append(str(item))
+    stu_concepts = [c.lower().strip() for c in stu_concepts if c.strip()]
     stu_rels = student_json.get("relationships", [])
     
     reconstructed_lower = reconstructed_text.lower()
+
     
     concept_results = []
     matched_count = 0

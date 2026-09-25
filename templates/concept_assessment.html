@@ -73,7 +73,22 @@
             </span>
         </div>
 
+        <!-- Inline Error Display Card (Requirement 10) -->
+        <div id="reference-error-card" class="hidden p-5 rounded-2xl bg-rose-500/10 border border-rose-500/30 text-rose-200 space-y-2 mb-4">
+            <div class="flex items-start space-x-3">
+                <span class="material-icons-round text-rose-400 text-2xl flex-shrink-0 mt-0.5">error_outline</span>
+                <div class="space-y-1 flex-1">
+                    <h4 class="text-sm font-bold text-white uppercase tracking-wider">Reference Processing Failed</h4>
+                    <p id="reference-error-message" class="text-xs text-slate-300 leading-relaxed"></p>
+                    <button type="button" onclick="handleSaveReference(event)" class="mt-2 px-4 py-1.5 rounded-lg bg-rose-500 hover:bg-rose-600 text-white text-xs font-bold transition-all inline-flex items-center shadow-md">
+                        <span class="material-icons-round text-xs mr-1">refresh</span> Try Again
+                    </button>
+                </div>
+            </div>
+        </div>
+
         <form id="reference-setup-form" onsubmit="handleSaveReference(event)" class="space-y-6">
+
             {% csrf_token %}
             <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 <!-- Option A: Topic Name -->
@@ -558,10 +573,15 @@ let chartLineInstance = null;
 async function handleSaveReference(e) {
     if (e) e.preventDefault();
 
+    const errCard = document.getElementById('reference-error-card');
+    if (errCard) errCard.classList.add('hidden');
+
     const form = document.getElementById('reference-setup-form');
     const formData = new FormData(form);
 
     const saveBtn = document.getElementById('save-reference-btn');
+    const originalBtnText = '<span class="material-icons-round text-base mr-1.5">save</span> Save Concept Representation';
+    
     saveBtn.disabled = true;
     saveBtn.innerHTML = '<span class="material-icons-round text-base mr-1.5 animate-spin">sync</span> Extracting Knowledge Representation...';
 
@@ -570,6 +590,7 @@ async function handleSaveReference(e) {
             method: 'POST',
             body: formData
         });
+        
         const data = await resp.json();
 
         if (data.status === 'ok') {
@@ -579,34 +600,60 @@ async function handleSaveReference(e) {
             document.getElementById('saved-reference-display').classList.remove('hidden');
             document.getElementById('display-topic-badge').textContent = data.topic;
             document.getElementById('live-active-topic').textContent = data.topic;
-            document.getElementById('reference-status-badge').className = 'px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-xs font-semibold flex items-center';
-            document.getElementById('reference-status-badge').innerHTML = '<span class="material-icons-round text-xs mr-1">check_circle</span> Concept Ready';
+            
+            const statusBadge = document.getElementById('reference-status-badge');
+            statusBadge.className = 'px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-xs font-semibold flex items-center';
+            statusBadge.innerHTML = '<span class="material-icons-round text-xs mr-1">check_circle</span> REFERENCE CONCEPT READY ✓';
 
-            // Core concepts pills
+            // Extract concept name strings safely
+            const rawConcepts = data.reference_concepts_json.concepts || [];
+            const conceptsList = data.reference_concepts_json.concepts_list || rawConcepts.map(c => typeof c === 'object' ? (c.name || c.id) : c);
+
+            // Render Core concepts pills
             const cContainer = document.getElementById('display-concepts-list');
-            cContainer.innerHTML = (data.reference_concepts_json.concepts || []).map(c => `
+            cContainer.innerHTML = conceptsList.map(c => `
                 <span class="px-2.5 py-1 rounded-lg bg-primary/20 text-primary border border-primary/30 font-semibold uppercase">
                     ${c}
                 </span>
             `).join('');
 
-            // Relationships list
+            // Render Relationships list
+            const rels = data.reference_concepts_json.relationships || [];
             const rContainer = document.getElementById('display-relationships-list');
-            rContainer.innerHTML = (data.reference_concepts_json.relationships || []).map(r => `
-                <div>${r.source} &rarr; <span class="text-emerald-400">${r.relation}</span> &rarr; ${r.target}</div>
-            `).join('');
+            if (rels.length > 0) {
+                rContainer.innerHTML = rels.map(r => `
+                    <div>${r.source} &rarr; <span class="text-emerald-400">${r.relation}</span> &rarr; ${r.target}</div>
+                `).join('');
+            } else {
+                rContainer.innerHTML = '<div class="text-slate-500 italic">No directional relationships extracted.</div>';
+            }
+
+            // Enable Live Explanation / Recorded buttons
+            document.getElementById('start-live-btn').disabled = false;
+            document.getElementById('start-live-btn').classList.remove('opacity-50');
 
         } else {
-            alert(data.message || 'Error parsing reference concept.');
+            showReferenceError(data.message || 'Error parsing reference concept.');
         }
     } catch (err) {
         console.error('Error saving reference concept:', err);
-        alert('Could not process reference concept. Please try again.');
+        showReferenceError('Could not process reference concept. Please check network connection and try again.');
     } finally {
         saveBtn.disabled = false;
-        saveBtn.innerHTML = '<span class="material-icons-round text-base mr-1.5">save</span> Save Concept Representation';
+        saveBtn.innerHTML = originalBtnText;
     }
 }
+
+function showReferenceError(msg) {
+    const card = document.getElementById('reference-error-card');
+    const msgEl = document.getElementById('reference-error-message');
+    if (card && msgEl) {
+        msgEl.textContent = msg;
+        card.classList.remove('hidden');
+        card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+}
+
 
 function handleSectionSelect(sel) {
     if (sel.value) {

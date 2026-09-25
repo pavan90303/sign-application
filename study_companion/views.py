@@ -4,6 +4,10 @@ from django.http import JsonResponse
 from .models import PPTUpload
 from .ai_services import extract_text_from_file, extract_ppt_text, summarize_text, generate_mcq
 import os
+import logging
+
+logger = logging.getLogger("study_companion.views")
+
 
 import json
 from nltk.tokenize import word_tokenize
@@ -923,55 +927,80 @@ def concept_assessment_save_reference_api(request):
     """
     POST API: Accepts reference text, uploaded PDF/PPT file, or course section selection.
     Extracts structured reference concept representation (nodes & relationships).
+    Enforces deterministic input priority, clear logging, and clean exception handling.
     """
     if request.method != 'POST':
         return JsonResponse({'status': 'error', 'message': 'POST required'}, status=405)
 
-    topic = request.POST.get('topic', '').strip()
-    reference_text = request.POST.get('reference_text', '').strip()
-    section_id = request.POST.get('section_id')
-    
-    # Check if a file (PDF/PPT/DOCX/TXT) was uploaded
-    if 'file' in request.FILES:
-        uploaded_file = request.FILES['file']
-        temp_dir = os.path.join(settings.MEDIA_ROOT, 'concept_uploads')
-        os.makedirs(temp_dir, exist_ok=True)
-        file_path = os.path.join(temp_dir, uploaded_file.name)
-        with open(file_path, 'wb+') as destination:
-            for chunk in uploaded_file.chunks():
-                destination.write(chunk)
-        
-        extracted = extract_text_from_file(file_path)
-        if extracted:
-            reference_text = extracted
-            if not topic:
-                topic = os.path.splitext(uploaded_file.name)[0].replace('_', ' ').title()
+    try:
+        topic = request.POST.get('topic', '').strip()
+        reference_text = request.POST.get('reference_text', '').strip()
+        section_id = request.POST.get('section_id')
+        reference_source = "text"
 
-    # Check if a course section was selected
-    if not reference_text and section_id:
-        sec = CourseSection.objects.filter(id=section_id).first()
-        if sec:
-            lessons_text = "\n".join([f"{l.title}: {l.explanation}" for l in sec.lessons.all()])
-            reference_text = f"Section {sec.section_number}: {sec.title}\n{sec.description}\n\nKey Concepts:\n{lessons_text}"
-            if not topic:
-                topic = sec.title
+        # Input Priority:
+        # 1. Uploaded File (if present)
+        # 2. Reference Textarea (if provided)
+        # 3. Selected Course Section
+        if 'file' in request.FILES and request.FILES['file'].name:
+            uploaded_file = request.FILES['file']
+            temp_dir = os.path.join(settings.MEDIA_ROOT, 'concept_uploads')
+            os.makedirs(temp_dir, exist_ok=True)
+            file_path = os.path.join(temp_dir, uploaded_file.name)
+            with open(file_path, 'wb+') as destination:
+                for chunk in uploaded_file.chunks():
+                    destination.write(chunk)
 
-    if not reference_text:
-        return JsonResponse({'status': 'error', 'message': 'Please provide reference text, upload a document, or select a course section.'}, status=400)
+            extracted = extract_text_from_file(file_path)
+            if extracted:
+                reference_text = extracted
+                reference_source = "document"
+                if not topic:
+                    topic = os.path.splitext(uploaded_file.name)[0].replace('_', ' ').title()
+            else:
+                return JsonResponse({'status': 'error', 'message': 'No readable text could be extracted from the uploaded document.'}, status=400)
 
-    if not topic:
-        topic = "General Concept"
+        elif reference_text:
+            reference_source = "text"
 
-    # Extract structured reference knowledge representation
-    from .ai_services import extract_reference_knowledge_representation
-    ref_rep = extract_reference_knowledge_representation(reference_text, topic_hint=topic)
+        elif section_id:
+            sec = CourseSection.objects.filter(id=section_id).first()
+            if sec:
+                lessons_text = "\n".join([f"{l.title}: {l.explanation}" for l in sec.lessons.all()])
+                reference_text = f"Section {sec.section_number}: {sec.title}\n{sec.description}\n\nKey Concepts:\n{lessons_text}"
+                reference_source = "course_section"
+                if not topic:
+                    topic = sec.title
 
-    return JsonResponse({
-        'status': 'ok',
-        'topic': ref_rep.get('topic', topic),
-        'reference_text': reference_text,
-        'reference_concepts_json': ref_rep
-    })
+        if not reference_text or not reference_text.strip():
+            return JsonResponse({'status': 'error', 'message': 'Please enter reference concept text, upload a valid PDF/PPT file, or select a course section.'}, status=400)
+
+        if not topic:
+            topic = "General Concept"
+
+        logger.info(f"[CONCEPT ASSESSMENT] Topic: {topic}")
+        logger.info(f"[CONCEPT ASSESSMENT] Reference source: {reference_source}, Length: {len(reference_text)} characters")
+        logger.info("[CONCEPT ASSESSMENT] Starting concept extraction...")
+
+        from .ai_services import extract_reference_knowledge_representation
+        ref_rep = extract_reference_knowledge_representation(reference_text, topic_hint=topic)
+
+        logger.info(f"[RESULT] Concepts extracted: {len(ref_rep.get('concepts', []))}, Relationships extracted: {len(ref_rep.get('relationships', []))}")
+
+        return JsonResponse({
+            'status': 'ok',
+            'topic': ref_rep.get('topic', topic),
+            'reference_text': reference_text,
+            'reference_source': reference_source,
+            'reference_concepts_json': ref_rep
+        })
+    except Exception as e:
+        logger.exception("Reference concept processing failed")
+        return JsonResponse({
+            'status': 'error',
+            'message': f"Reference processing failed: {str(e)}"
+        }, status=500)
+
 
 
 @login_required(login_url="login")

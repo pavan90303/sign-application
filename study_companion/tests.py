@@ -504,6 +504,54 @@ class LearnSignLanguageFeatureTests(TestCase):
         self.assertTrue(review.is_verified)
         self.assertEqual(review.corrected_coverage, 0.90)
 
+    def test_extract_reference_knowledge_representation_photosynthesis(self):
+        """Test extract_reference_knowledge_representation returns structured concepts and relationships"""
+        from study_companion.ai_services import extract_reference_knowledge_representation
+        text = "Photosynthesis is the process by which green plants use sunlight, water and carbon dioxide to produce glucose and release oxygen."
+        res = extract_reference_knowledge_representation(text, topic_hint="Photosynthesis")
+        self.assertEqual(res['topic'], "Photosynthesis")
+        self.assertIn('concepts', res)
+        self.assertIn('concepts_list', res)
+        self.assertIn('relationships', res)
+        self.assertTrue(len(res['concepts']) >= 4)
+        self.assertTrue(isinstance(res['concepts'][0], dict))
+        self.assertIn('id', res['concepts'][0])
+        self.assertIn('name', res['concepts'][0])
+
+    def test_save_reference_api_post(self):
+        """Test concept_assessment_save_reference_api returns JSON with status ok"""
+        self.client.login(username='learnuser', password='password123')
+        data = {
+            'topic': 'Photosynthesis',
+            'reference_text': 'Photosynthesis is the process by which green plants use sunlight, water and carbon dioxide to produce glucose and release oxygen.'
+        }
+        resp = self.client.post(reverse('concept_assessment_save_reference'), data)
+        self.assertEqual(resp.status_code, 200)
+        json_resp = json.loads(resp.content)
+        self.assertEqual(json_resp['status'], 'ok')
+        self.assertEqual(json_resp['topic'], 'Photosynthesis')
+        self.assertIn('reference_concepts_json', json_resp)
+        self.assertEqual(json_resp['reference_source'], 'text')
+
+    def test_semantic_comparison_paraphrase_and_misconception(self):
+        """Test semantic comparison recognizes synonym paraphrases and flags explicit misconceptions"""
+        from study_companion.ai_services import perform_semantic_concept_comparison
+        ref_json = {
+            'topic': 'Photosynthesis',
+            'concepts': ['green plants', 'sunlight', 'water', 'carbon dioxide', 'glucose', 'oxygen'],
+            'relationships': [{'source': 'green_plants', 'relation': 'use', 'target': 'sunlight'}]
+        }
+        stu_json = {
+            'concepts': ['green plants', 'light', 'water', 'food', 'carbon dioxide', 'oxygen'],
+            'relationships': []
+        }
+        text = "Green plants use light and water to make food and release carbon dioxide."
+        eval_res = perform_semantic_concept_comparison(ref_json, stu_json, text)
+        self.assertIn('overall_score', eval_res)
+        self.assertIn('category_summary', eval_res)
+        self.assertTrue(len(eval_res['concept_results']) >= 6)
+
+
 
 
 
