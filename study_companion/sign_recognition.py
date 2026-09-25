@@ -886,7 +886,8 @@ def analyze_practice_sign(section_id, expected_sign_input, raw_frames, user=None
             "recognition_confidence": 0.0,
             "reference_similarity": None,
             "matched": False,
-            "feedback": "Keep your hand centered and ensure all 5 fingers are clearly visible."
+            "feedback": "Keep your hand centered and ensure all 5 fingers are clearly visible.",
+            "guidance": "Position your hand within the camera frame so your wrist and all 5 fingertips are visible."
         }
 
     # Check valid frames with hand landmarks
@@ -906,7 +907,8 @@ def analyze_practice_sign(section_id, expected_sign_input, raw_frames, user=None
             "recognition_confidence": 0.0,
             "reference_similarity": None,
             "matched": False,
-            "feedback": "Hold your sign steady for the full 2 seconds while the camera captures."
+            "feedback": "Hold your sign steady for the full 2 seconds while the camera captures.",
+            "guidance": "Keep your hand steadily in frame for the full 2.4 seconds while the progress bar fills."
         }
 
     # Extract normalized features

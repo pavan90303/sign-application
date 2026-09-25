@@ -19,9 +19,8 @@
 {% endblock %}
 
 {% block content %}
-<!-- Include MediaPipe Hands and Camera Utils from CDN -->
-<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
-<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+<!-- MediaPipe Hands SDK (Pinned stable release for reliable landmark tracking) -->
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/hands.js" crossorigin="anonymous"></script>
 
 <div class="max-w-6xl mx-auto space-y-6">
 
@@ -191,9 +190,9 @@
 
                 <!-- Webcam Video Viewport with Live Canvas Overlay -->
                 <div class="relative w-full aspect-video bg-black/80 rounded-2xl overflow-hidden border border-white/10 flex items-center justify-center shadow-inner group">
-                    <video id="webcam-video" class="w-full h-full object-cover -scale-x-100 hidden" autoplay playsinline muted></video>
+                    <video id="webcam-video" class="w-full h-full object-contain hidden" style="transform: scaleX(-1); transform-origin: center;" autoplay playsinline muted></video>
                     <!-- Real-time MediaPipe Hand Skeleton Canvas Overlay -->
-                    <canvas id="hand-canvas-overlay" class="absolute inset-0 w-full h-full object-cover -scale-x-100 pointer-events-none hidden"></canvas>
+                    <canvas id="hand-canvas-overlay" class="absolute inset-0 w-full h-full object-contain pointer-events-none hidden" style="transform: scaleX(-1); transform-origin: center;"></canvas>
 
                     <!-- Camera Off Placeholder -->
                     <div id="webcam-off-placeholder" class="text-center p-6 space-y-3">
@@ -382,7 +381,10 @@ let isAnalyzing = false;
 let recordedFrames = [];
 let mediaStream = null;
 let handsDetector = null;
-let cameraInstance = null;
+let animationFrameId = null;
+let isProcessingFrame = false;
+let isMediaPipeLoading = false;
+let lastWristPos = null;
 
 // UI Elements
 const videoEl = document.getElementById('expected-video-player');
@@ -403,6 +405,42 @@ const toggleCamBtn = document.getElementById('toggle-camera-btn');
 const toggleCamIcon = document.getElementById('toggle-cam-icon');
 const toggleCamText = document.getElementById('toggle-cam-text');
 const handIndicatorPill = document.getElementById('hand-indicator-pill');
+
+function updateTrackerStatus(state, message) {
+    if (!cameraStatusDot || !cameraStatusText || !handIndicatorPill) return;
+
+    if (state === 'tracking') {
+        cameraStatusDot.className = 'w-2 h-2 rounded-full bg-emerald-400 animate-pulse';
+        cameraStatusText.textContent = message || 'Tracking';
+        handIndicatorPill.className = 'px-3 py-1 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-[11px] text-emerald-400 font-semibold flex items-center shadow-sm shadow-emerald-500/10';
+        handIndicatorPill.innerHTML = '<span class="material-icons-round text-xs mr-1 text-emerald-400">check_circle</span> Hand Tracked';
+    } else if (state === 'nohand') {
+        cameraStatusDot.className = 'w-2 h-2 rounded-full bg-amber-400';
+        cameraStatusText.textContent = message || 'No Hand In View';
+        handIndicatorPill.className = 'px-3 py-1 rounded-full bg-white/5 border border-white/10 text-[11px] text-slate-400 font-semibold flex items-center';
+        handIndicatorPill.innerHTML = '<span class="material-icons-round text-xs mr-1 text-amber-400">pan_tool</span> Hold Hand in View';
+    } else if (state === 'loading') {
+        cameraStatusDot.className = 'w-2 h-2 rounded-full bg-amber-400 animate-ping';
+        cameraStatusText.textContent = message || 'Loading Hand AI...';
+        handIndicatorPill.className = 'px-3 py-1 rounded-full bg-amber-500/10 border border-amber-500/20 text-[11px] text-amber-300 font-semibold flex items-center';
+        handIndicatorPill.innerHTML = '<span class="material-icons-round text-xs mr-1 animate-spin text-amber-400">sync</span> Loading AI Model...';
+    } else if (state === 'ready') {
+        cameraStatusDot.className = 'w-2 h-2 rounded-full bg-emerald-400';
+        cameraStatusText.textContent = message || 'Camera Active';
+        handIndicatorPill.className = 'px-3 py-1 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-[11px] text-emerald-400 font-semibold flex items-center';
+        handIndicatorPill.innerHTML = '<span class="material-icons-round text-xs mr-1 text-emerald-400">verified</span> Hand Tracker Ready';
+    } else if (state === 'error') {
+        cameraStatusDot.className = 'w-2 h-2 rounded-full bg-rose-500';
+        cameraStatusText.textContent = message || 'Camera Error';
+        handIndicatorPill.className = 'px-3 py-1 rounded-full bg-rose-500/15 border border-rose-500/30 text-[11px] text-rose-400 font-semibold flex items-center';
+        handIndicatorPill.innerHTML = '<span class="material-icons-round text-xs mr-1 text-rose-400">error</span> Tracker Error';
+    } else {
+        cameraStatusDot.className = 'w-2 h-2 rounded-full bg-slate-500';
+        cameraStatusText.textContent = message || 'Camera Idle';
+        handIndicatorPill.className = 'px-3 py-1 rounded-full bg-white/5 border border-white/10 text-[11px] text-slate-400 font-semibold flex items-center';
+        handIndicatorPill.innerHTML = '<span class="material-icons-round text-xs mr-1 text-slate-500">videocam_off</span> Camera Off';
+    }
+}
 
 const warningBanner = document.getElementById('section-warning-banner');
 const warningTitle = document.getElementById('warning-title');
@@ -558,10 +596,30 @@ function replayExpectedVideo() {
 
 async function initMediaPipeHands() {
     if (handsDetector) return handsDetector;
+    if (isMediaPipeLoading) {
+        while (isMediaPipeLoading) {
+            await new Promise(r => setTimeout(r, 100));
+        }
+        return handsDetector;
+    }
+
+    isMediaPipeLoading = true;
+    updateTrackerStatus('loading', 'Loading Hand AI...');
 
     try {
+        if (typeof Hands === 'undefined') {
+            let retries = 0;
+            while (typeof Hands === 'undefined' && retries < 25) {
+                await new Promise(r => setTimeout(r, 200));
+                retries++;
+            }
+            if (typeof Hands === 'undefined') {
+                throw new Error("MediaPipe Hands library could not be loaded from CDN.");
+            }
+        }
+
         handsDetector = new Hands({
-            locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+            locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/${file}`
         });
 
         handsDetector.setOptions({
@@ -572,68 +630,98 @@ async function initMediaPipeHands() {
         });
 
         handsDetector.onResults(onHandResults);
+
+        if (typeof handsDetector.initialize === 'function') {
+            await handsDetector.initialize();
+        }
+
+        updateTrackerStatus('ready', 'Hand Tracker Ready');
+        console.log("[SignAI] MediaPipe Hands model initialized successfully.");
         return handsDetector;
     } catch (err) {
-        console.error('MediaPipe initialization warning:', err);
+        console.error('[SignAI] MediaPipe initialization error:', err);
+        updateTrackerStatus('error', 'Tracker Init Failed');
         return null;
+    } finally {
+        isMediaPipeLoading = false;
     }
 }
 
 function onHandResults(results) {
+    if (!isCameraActive) return;
+
     // Resize overlay canvas to match webcam video dimensions
-    if (handCanvas.width !== webcamVideo.videoWidth || handCanvas.height !== webcamVideo.videoHeight) {
-        handCanvas.width = webcamVideo.videoWidth || 640;
-        handCanvas.height = webcamVideo.videoHeight || 480;
+    const vWidth = webcamVideo.videoWidth || 640;
+    const vHeight = webcamVideo.videoHeight || 480;
+    if (handCanvas.width !== vWidth || handCanvas.height !== vHeight) {
+        handCanvas.width = vWidth;
+        handCanvas.height = vHeight;
     }
 
     canvasCtx.save();
     canvasCtx.clearRect(0, 0, handCanvas.width, handCanvas.height);
 
-    const hasHands = results.multiHandLandmarks && results.multiHandLandmarks.length > 0;
+    const hands = results.multiHandLandmarks;
+    const hasHands = hands && hands.length > 0;
 
     if (hasHands) {
-        // Draw hand landmarks & connections in real time
-        for (const landmarks of results.multiHandLandmarks) {
-            drawHandSkeleton(landmarks, canvasCtx, handCanvas.width, handCanvas.height);
-
-            // If analysis recording window is actively running, collect frames
-            if (isAnalyzing) {
-                recordedFrames.push({
-                    timestamp: Date.now(),
-                    landmarks: landmarks.map(p => ({ x: p.x, y: p.y, z: p.z }))
-                });
-            }
+        // Draw hand landmarks & connections for all visible hands
+        for (let i = 0; i < hands.length; i++) {
+            drawHandSkeleton(hands[i], canvasCtx, handCanvas.width, handCanvas.height);
         }
 
-        // Live badge
-        cameraStatusDot.className = 'w-2 h-2 rounded-full bg-emerald-400 animate-pulse';
-        cameraStatusText.textContent = `Tracking (${results.multiHandLandmarks.length} hand${results.multiHandLandmarks.length > 1 ? 's' : ''})`;
-        handIndicatorPill.className = 'px-3 py-1 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-[11px] text-emerald-400 font-semibold flex items-center';
-        handIndicatorPill.innerHTML = '<span class="material-icons-round text-xs mr-1 text-emerald-400">check_circle</span> Hand Tracked';
+        // Determine primary hand for sequence recording (temporal tracking continuity)
+        let primaryHand = hands[0];
+        if (hands.length > 1 && lastWristPos) {
+            let minD = Infinity;
+            for (const h of hands) {
+                const d = Math.hypot(h[0].x - lastWristPos.x, h[0].y - lastWristPos.y);
+                if (d < minD) {
+                    minD = d;
+                    primaryHand = h;
+                }
+            }
+        }
+        lastWristPos = { x: primaryHand[0].x, y: primaryHand[0].y };
+
+        // Collect frames during active sign recording window
+        if (isAnalyzing) {
+            recordedFrames.push({
+                timestamp: Date.now(),
+                landmarks: primaryHand.map(p => ({ x: p.x, y: p.y, z: p.z }))
+            });
+        }
+
+        updateTrackerStatus('tracking', `Tracking (${hands.length} hand${hands.length > 1 ? 's' : ''})`);
     } else {
-        cameraStatusDot.className = 'w-2 h-2 rounded-full bg-amber-400';
-        cameraStatusText.textContent = 'No Hand Detected';
-        handIndicatorPill.className = 'px-3 py-1 rounded-full bg-white/5 border border-white/10 text-[11px] text-slate-400 font-semibold flex items-center';
-        handIndicatorPill.innerHTML = '<span class="material-icons-round text-xs mr-1 text-amber-400">pan_tool</span> Hold Hand in View';
+        lastWristPos = null;
+        updateTrackerStatus('nohand', 'Hold Hand in View');
     }
 
     canvasCtx.restore();
 }
 
-// MediaPipe landmark connections (21 joints)
+// MediaPipe landmark connections (21 joints: thumb, index, middle, ring, pinky, palm)
 const HAND_CONNECTIONS = [
     [0, 1], [1, 2], [2, 3], [3, 4],          // Thumb
     [0, 5], [5, 6], [6, 7], [7, 8],          // Index
-    [5, 9], [9, 10], [10, 11], [11, 12],     // Middle
-    [9, 13], [13, 14], [14, 15], [15, 16],   // Ring
-    [13, 17], [17, 18], [18, 19], [19, 20],  // Pinky
-    [0, 17]                                  // Palm base
+    [9, 10], [10, 11], [11, 12],             // Middle
+    [13, 14], [14, 15], [15, 16],             // Ring
+    [0, 17], [17, 18], [18, 19], [19, 20],   // Pinky & Palm base
+    [5, 9], [9, 13], [13, 17]                 // Knuckle MCP arch
 ];
 
 function drawHandSkeleton(landmarks, ctx, width, height) {
-    // Draw bones / connections
-    ctx.strokeStyle = '#06b6d4'; // Cyan
-    ctx.lineWidth = 2.5;
+    if (!landmarks || landmarks.length < 21) return;
+
+    // 1. Draw glowing bones
+    ctx.save();
+    ctx.shadowColor = 'rgba(6, 182, 212, 0.7)';
+    ctx.shadowBlur = 8;
+    ctx.strokeStyle = '#22d3ee'; // Bright Cyan
+    ctx.lineWidth = 3;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
 
     for (const [startIdx, endIdx] of HAND_CONNECTIONS) {
         const p1 = landmarks[startIdx];
@@ -643,14 +731,41 @@ function drawHandSkeleton(landmarks, ctx, width, height) {
         ctx.lineTo(p2.x * width, p2.y * height);
         ctx.stroke();
     }
+    ctx.restore();
 
-    // Draw joints
+    // 2. Draw anatomical joint nodes
+    const tipIndices = [4, 8, 12, 16, 20];
     for (let i = 0; i < landmarks.length; i++) {
         const p = landmarks[i];
+        const cx = p.x * width;
+        const cy = p.y * height;
+
         ctx.beginPath();
-        ctx.arc(p.x * width, p.y * height, i === 0 ? 5 : (i % 4 === 0 ? 4.5 : 3), 0, 2 * Math.PI);
-        ctx.fillStyle = i === 0 ? '#10b981' : (i % 4 === 0 ? '#ec4899' : '#ffffff');
-        ctx.fill();
+        if (i === 0) {
+            // Wrist base: Emerald green with white rim
+            ctx.arc(cx, cy, 6, 0, 2 * Math.PI);
+            ctx.fillStyle = '#10b981';
+            ctx.fill();
+            ctx.lineWidth = 2;
+            ctx.strokeStyle = '#ffffff';
+            ctx.stroke();
+        } else if (tipIndices.includes(i)) {
+            // Fingertip points: Coral rose with white rim
+            ctx.arc(cx, cy, 5.5, 0, 2 * Math.PI);
+            ctx.fillStyle = '#f43f5e';
+            ctx.fill();
+            ctx.lineWidth = 2;
+            ctx.strokeStyle = '#ffffff';
+            ctx.stroke();
+        } else {
+            // Knuckle joints: Sky cyan with subtle rim
+            ctx.arc(cx, cy, 3.5, 0, 2 * Math.PI);
+            ctx.fillStyle = '#38bdf8';
+            ctx.fill();
+            ctx.lineWidth = 1.5;
+            ctx.strokeStyle = '#ffffff';
+            ctx.stroke();
+        }
     }
 }
 
@@ -664,14 +779,25 @@ async function toggleWebcam() {
 
 async function startWebcam() {
     try {
-        await initMediaPipeHands();
+        updateTrackerStatus('loading', 'Starting camera...');
 
+        // 1. Request user webcam stream (single call, no duplicate CameraUtils)
         mediaStream = await navigator.mediaDevices.getUserMedia({
-            video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: 'user' },
+            video: {
+                width: { ideal: 640 },
+                height: { ideal: 480 },
+                facingMode: 'user'
+            },
             audio: false
         });
 
         webcamVideo.srcObject = mediaStream;
+        await webcamVideo.play();
+
+        // Match overlay canvas size to stream
+        handCanvas.width = webcamVideo.videoWidth || 640;
+        handCanvas.height = webcamVideo.videoHeight || 480;
+
         webcamVideo.classList.remove('hidden');
         handCanvas.classList.remove('hidden');
         webcamPlaceholder.classList.add('hidden');
@@ -681,70 +807,89 @@ async function startWebcam() {
         toggleCamIcon.textContent = 'videocam_off';
         toggleCamText.textContent = 'Stop Camera';
 
-        // Camera frame loop via MediaPipe CameraUtils
-        if (window.Camera && handsDetector) {
-            cameraInstance = new Camera(webcamVideo, {
-                onFrame: async () => {
-                    if (isCameraActive && handsDetector) {
-                        await handsDetector.send({ image: webcamVideo });
-                    }
-                },
-                width: 640,
-                height: 480
-            });
-            cameraInstance.start();
-        } else {
-            // Fallback frame processor
-            requestAnimationFrame(processWebcamFrame);
+        // 2. Initialize MediaPipe Hands
+        await initMediaPipeHands();
+
+        // 3. Start high-performance animation frame loop
+        if (animationFrameId) {
+            cancelAnimationFrame(animationFrameId);
         }
+        animationFrameId = requestAnimationFrame(processWebcamFrame);
+
     } catch (err) {
         console.error('Camera access error:', err);
-        alert('Camera permission denied or camera not found. Please enable webcam permissions in your browser.');
+        updateTrackerStatus('error', 'Camera Error');
+        alert('Camera access error: ' + (err.message || 'Please check webcam permissions.'));
+        stopWebcam();
     }
 }
 
 async function processWebcamFrame() {
     if (!isCameraActive) return;
-    if (handsDetector && webcamVideo.readyState >= 2) {
-        try {
-            await handsDetector.send({ image: webcamVideo });
-        } catch (e) {}
+
+    if (handsDetector && webcamVideo && webcamVideo.readyState >= 2 && !webcamVideo.paused) {
+        if (!isProcessingFrame) {
+            isProcessingFrame = true;
+            try {
+                await handsDetector.send({ image: webcamVideo });
+            } catch (frameErr) {
+                console.warn('[SignAI] MediaPipe frame send error:', frameErr);
+            } finally {
+                isProcessingFrame = false;
+            }
+        }
     }
-    requestAnimationFrame(processWebcamFrame);
+
+    if (isCameraActive) {
+        animationFrameId = requestAnimationFrame(processWebcamFrame);
+    }
 }
 
 function stopWebcam() {
-    if (cameraInstance) {
-        try { cameraInstance.stop(); } catch(e) {}
-        cameraInstance = null;
+    isCameraActive = false;
+    isAnalyzing = false;
+    isProcessingFrame = false;
+    lastWristPos = null;
+
+    if (animationFrameId) {
+        cancelAnimationFrame(animationFrameId);
+        animationFrameId = null;
     }
+
     if (mediaStream) {
-        mediaStream.getTracks().forEach(t => t.stop());
+        mediaStream.getTracks().forEach(track => track.stop());
         mediaStream = null;
     }
-    isCameraActive = false;
-    webcamVideo.srcObject = null;
-    webcamVideo.classList.add('hidden');
-    handCanvas.classList.add('hidden');
-    webcamPlaceholder.classList.remove('hidden');
+
+    if (webcamVideo) {
+        webcamVideo.pause();
+        webcamVideo.srcObject = null;
+        webcamVideo.classList.add('hidden');
+    }
+
+    if (handCanvas) {
+        if (canvasCtx) {
+            canvasCtx.clearRect(0, 0, handCanvas.width, handCanvas.height);
+        }
+        handCanvas.classList.add('hidden');
+    }
+
+    if (webcamPlaceholder) {
+        webcamPlaceholder.classList.remove('hidden');
+    }
 
     toggleCamBtn.className = 'flex-1 inline-flex items-center justify-center px-4 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-bold shadow-lg shadow-emerald-500/20 transition-all';
     toggleCamIcon.textContent = 'videocam';
     toggleCamText.textContent = 'Start Camera';
 
-    cameraStatusDot.className = 'w-2 h-2 rounded-full bg-slate-500';
-    cameraStatusText.textContent = 'Camera Idle';
+    updateTrackerStatus('idle', 'Camera Idle');
 }
 
 function toggleMirror() {
     isMirrored = !isMirrored;
-    if (isMirrored) {
-        webcamVideo.classList.add('-scale-x-100');
-        handCanvas.classList.add('-scale-x-100');
-    } else {
-        webcamVideo.classList.remove('-scale-x-100');
-        handCanvas.classList.remove('-scale-x-100');
-    }
+    const transformVal = isMirrored ? 'scaleX(-1)' : 'scaleX(1)';
+    webcamVideo.style.transform = transformVal;
+    handCanvas.style.transform = transformVal;
 }
 
 // Clean up on page change
@@ -764,11 +909,21 @@ async function startSignAnalysis() {
         if (!isCameraActive) return;
     }
 
+    // 2. Ensure MediaPipe Hands tracker is initialized
+    if (!handsDetector) {
+        updateTrackerStatus('loading', 'Preparing hand tracker...');
+        await initMediaPipeHands();
+        if (!handsDetector) {
+            alert('Hand tracking model could not be initialized. Please check your internet connection and try again.');
+            return;
+        }
+    }
+
     const analyzeBtn = document.getElementById('analyze-sign-btn');
     analyzeBtn.disabled = true;
     analyzeBtn.classList.add('opacity-50', 'cursor-not-allowed');
 
-    // 2. Countdown 3-2-1
+    // 3. Countdown 3-2-1
     analysisOverlay.classList.remove('hidden');
     captureProgressContainer.classList.add('hidden');
     captureProgressBar.style.width = '0%';
