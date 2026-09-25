@@ -149,6 +149,14 @@
               class="material-icons-round text-xl {% if request.resolver_match.url_name == 'animation' %}text-primary{% else %}group-hover:text-primary{% endif %} transition-colors relative z-10">videocam</span>
             <span class="hidden lg:block ml-3 font-medium relative z-10">Live Converter</span>
           </a>
+
+          <a class="flex items-center px-4 py-3 {% if 'concept' in request.resolver_match.url_name %}bg-primary/10 text-primary{% else %}text-slate-400 hover:text-white hover:bg-white/5{% endif %} rounded-xl transition-all group relative overflow-hidden z-10"
+            href="{% url 'concept_assessment' %}">
+            <div class="absolute inset-0 bg-primary/10 opacity-0 group-hover:opacity-100 transition-opacity"></div>
+            <span
+              class="material-icons-round text-xl {% if 'concept' in request.resolver_match.url_name %}text-primary{% else %}group-hover:text-primary{% endif %} transition-colors relative z-10">analytics</span>
+            <span class="hidden lg:block ml-3 font-medium relative z-10">Concept Assessment</span>
+          </a>
           {% else %}
           <a class="flex items-center px-4 py-3 {% if 'login' in request.path %}bg-primary/10 text-primary{% else %}text-slate-400 hover:text-white hover:bg-white/5{% endif %} rounded-xl transition-all group relative overflow-hidden z-10"
             href="{% url 'login' %}">

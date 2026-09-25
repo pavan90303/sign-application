@@ -221,3 +221,93 @@ class PracticeAttempt(models.Model):
     def __str__(self):
         return f"{self.user.username} - {self.expected_sign} vs {self.predicted_sign} ({self.status}) [{self.recognition_confidence*100:.0f}%]"
 
+
+# =====================================================================
+# CONCEPT UNDERSTANDING ASSESSMENT MODELS
+# =====================================================================
+
+class ConceptAssessment(models.Model):
+    EXPLANATION_SOURCE_CHOICES = [
+        ('live', 'Live Webcam'),
+        ('recorded', 'Uploaded Video'),
+    ]
+
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='concept_assessments')
+    topic = models.CharField(max_length=255)
+    reference_content = models.TextField()
+    reference_concepts_json = models.JSONField(default=dict, blank=True)
+    reconstructed_explanation = models.TextField(blank=True, default='')
+    raw_recognized_units = models.JSONField(default=list, blank=True)
+    explanation_source = models.CharField(max_length=20, choices=EXPLANATION_SOURCE_CHOICES, default='live')
+    
+    # Grounded Metrics
+    recognition_confidence = models.FloatField(default=0.0)  # 0.0 - 1.0
+    concept_coverage = models.FloatField(default=0.0)       # 0.0 - 1.0
+    relationship_accuracy = models.FloatField(default=0.0)  # 0.0 - 1.0
+    overall_understanding_score = models.FloatField(default=0.0) # 0.0 - 1.0
+    
+    category_summary_json = models.JSONField(default=dict, blank=True)
+    status_classification_json = models.JSONField(default=dict, blank=True)
+    
+    video_saved = models.BooleanField(default=False)
+    video_file = models.FileField(upload_to='concept_videos/', blank=True, null=True)
+    
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"{self.user.username} - {self.topic} ({self.created_at.strftime('%Y-%m-%d %H:%M')})"
+
+
+class ConceptResult(models.Model):
+    STATUS_CHOICES = [
+        ('understood', 'Understood'),
+        ('partially_understood', 'Partially Understood'),
+        ('missing', 'Missing'),
+        ('misconception', 'Possible Misconception'),
+    ]
+
+    assessment = models.ForeignKey(ConceptAssessment, on_delete=models.CASCADE, related_name='results')
+    concept_name = models.CharField(max_length=255)
+    status = models.CharField(max_length=30, choices=STATUS_CHOICES)
+    confidence = models.FloatField(default=1.0)
+    feedback = models.TextField(blank=True, default='')
+
+    def __str__(self):
+        return f"{self.assessment.topic} - {self.concept_name}: {self.status}"
+
+
+class AssessmentAttempt(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='concept_attempts')
+    topic = models.CharField(max_length=255)
+    attempt_number = models.IntegerField(default=1)
+    recognition_confidence = models.FloatField(default=0.0)
+    concept_coverage = models.FloatField(default=0.0)
+    relationship_accuracy = models.FloatField(default=0.0)
+    overall_understanding_score = models.FloatField(default=0.0)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['attempt_number']
+
+    def __str__(self):
+        return f"{self.user.username} - {self.topic} (Attempt {self.attempt_number}: {self.overall_understanding_score*100:.0f}%)"
+
+
+class TeacherReview(models.Model):
+    assessment = models.OneToOneField(ConceptAssessment, on_delete=models.CASCADE, related_name='teacher_review')
+    teacher = models.ForeignKey(User, on_delete=models.CASCADE, related_name='teacher_reviews')
+    is_verified = models.BooleanField(default=False)
+    corrected_reconstruction = models.TextField(blank=True, null=True)
+    corrected_coverage = models.FloatField(blank=True, null=True)
+    corrected_relationship_accuracy = models.FloatField(blank=True, null=True)
+    teacher_notes = models.TextField(blank=True, null=True)
+    reviewed_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"Review by {self.teacher.username} on Assessment #{self.assessment.id}"
+
+

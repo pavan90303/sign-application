@@ -1,0 +1,1252 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Concept Understanding Assessment • SignAI Pro{% endblock %}
+
+{% block page_title %}Concept Assessment{% endblock %}
+{% block page_subtitle %}Explain what you learned using ISL and let AI analyze your conceptual understanding{% endblock %}
+
+{% block header_content %}
+<div class="flex items-center space-x-2 text-xs font-semibold text-slate-400">
+    <a href="{% url 'dashboard' %}" class="hover:text-primary transition-colors flex items-center">
+        <span class="material-icons-round text-sm mr-1">dashboard</span> Dashboard
+    </a>
+    <span class="text-slate-600">/</span>
+    <span class="text-primary font-medium">Concept Assessment</span>
+</div>
+{% endblock %}
+
+{% block extra_css %}
+<!-- Include Chart.js for data-driven graphs -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<!-- Include MediaPipe Hands SDK -->
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/hands.js" crossorigin="anonymous"></script>
+<style>
+    .node-matched { fill: rgba(16, 185, 129, 0.2); stroke: #10b981; stroke-width: 2.5; }
+    .node-partial { fill: rgba(245, 158, 11, 0.2); stroke: #f59e0b; stroke-width: 2.5; }
+    .node-missing { fill: rgba(244, 63, 94, 0.2); stroke: #f43f5e; stroke-width: 2.5; stroke-dasharray: 4,4; }
+    .node-misconception { fill: rgba(239, 68, 68, 0.3); stroke: #ef4444; stroke-width: 3; }
+    .edge-line { stroke: rgba(255, 255, 255, 0.2); stroke-width: 2; marker-end: url(#arrow); }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="max-w-7xl mx-auto space-y-8">
+
+    <!-- Top Navigation Header & Banner -->
+    <div class="glass-panel p-6 lg:p-8 rounded-3xl border border-primary/20 shadow-2xl relative overflow-hidden">
+        <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-6 relative z-10">
+            <div class="space-y-2">
+                <span class="px-3 py-1 rounded-full bg-primary/20 border border-primary/40 text-primary text-[10px] font-bold uppercase tracking-widest inline-block">
+                    AI Educational Assessment Engine
+                </span>
+                <h2 class="text-3xl font-black text-white tracking-tight flex items-center">
+                    <span class="material-icons-round text-primary text-3xl mr-2.5">analytics</span>
+                    Concept Understanding Assessment
+                </h2>
+                <p class="text-sm text-slate-300 max-w-3xl leading-relaxed">
+                    Explain an academic topic using Indian Sign Language (live camera or video upload). Our multi-stage AI pipeline extracts your communicated concepts, builds knowledge graphs, and identifies matched knowledge, missing concepts, and misconceptions.
+                </p>
+            </div>
+            
+            <div class="flex items-center space-x-3">
+                <button onclick="document.getElementById('recent-attempts-section').scrollIntoView({behavior: 'smooth'})" 
+                        class="px-4 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 border border-white/10 text-xs font-semibold transition-all flex items-center">
+                    <span class="material-icons-round text-sm mr-1.5">history</span> Past Assessments
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- STEP 1: REFERENCE CONCEPT SETUP -->
+    <div class="glass-panel p-6 lg:p-8 rounded-3xl border border-white/10 shadow-2xl space-y-6">
+        <div class="flex items-center justify-between border-b border-white/10 pb-4">
+            <div class="flex items-center space-x-3">
+                <div class="w-10 h-10 rounded-xl bg-primary/20 text-primary flex items-center justify-center font-bold">1</div>
+                <div>
+                    <h3 class="text-lg font-bold text-white">Select or Upload Reference Concept</h3>
+                    <p class="text-xs text-slate-400">Provide the textbook content or educational material you studied.</p>
+                </div>
+            </div>
+            <span id="reference-status-badge" class="px-3 py-1 rounded-full bg-slate-500/20 text-slate-400 border border-slate-500/30 text-xs font-semibold flex items-center">
+                <span class="material-icons-round text-xs mr-1">edit</span> Setup Required
+            </span>
+        </div>
+
+        <form id="reference-setup-form" onsubmit="handleSaveReference(event)" class="space-y-6">
+            {% csrf_token %}
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <!-- Option A: Topic Name -->
+                <div>
+                    <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">Topic Name:</label>
+                    <input type="text" id="input-topic" name="topic" value="Photosynthesis" 
+                           placeholder="e.g. Photosynthesis, Gravity, Cell Structure"
+                           class="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/15 text-white placeholder-slate-500 text-sm font-semibold focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all">
+                </div>
+
+                <!-- Option B: Select Course Section -->
+                <div>
+                    <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">Or Choose from Course Section:</label>
+                    <select id="select-section" name="section_id" onchange="handleSectionSelect(this)"
+                            class="w-full px-4 py-3 rounded-xl bg-slate-900 border border-white/15 text-white text-sm font-semibold focus:outline-none focus:border-primary transition-all">
+                        <option value="">-- Select Course Section --</option>
+                        {% for sec in sections %}
+                        <option value="{{ sec.id }}" {% if sec.section_number == 2 %}selected{% endif %}>
+                            Section {{ sec.section_number }}: {{ sec.title }} ({{ sec.level }})
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <!-- Option C: Upload PDF / PPT -->
+                <div>
+                    <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">Or Upload PDF / PPT File:</label>
+                    <input type="file" id="input-file" name="file" accept=".pdf,.pptx,.ppt,.docx,.txt"
+                           class="w-full text-xs text-slate-400 file:mr-3 file:py-2.5 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-white/10 file:text-white hover:file:bg-white/20 transition-all cursor-pointer">
+                </div>
+            </div>
+
+            <!-- Option D: Reference Textarea -->
+            <div>
+                <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">Reference Concept Content / Textbook Paragraph:</label>
+                <textarea id="input-reference-text" name="reference_text" rows="3"
+                          placeholder="Paste reference textbook paragraph or material..."
+                          class="w-full p-4 rounded-xl bg-white/5 border border-white/15 text-white placeholder-slate-500 text-sm font-medium focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all custom-scrollbar">Photosynthesis is the process by which green plants use sunlight, water and carbon dioxide to produce glucose and release oxygen.</textarea>
+            </div>
+
+            <div class="flex items-center justify-between pt-2">
+                <div class="flex items-center space-x-2 text-xs text-slate-400">
+                    <span class="material-icons-round text-primary text-base">info</span>
+                    <span>AI extracts concepts & relationships (not exact word matching).</span>
+                </div>
+                <button type="submit" id="save-reference-btn" 
+                        class="px-6 py-3 rounded-xl bg-primary hover:bg-primary/90 text-white font-bold text-xs shadow-lg shadow-primary/25 transition-all flex items-center">
+                    <span class="material-icons-round text-base mr-1.5">save</span> Save Concept Representation
+                </button>
+            </div>
+        </form>
+
+        <!-- Saved Reference Knowledge Representation Schema (Requirement 4) -->
+        <div id="saved-reference-display" class="hidden p-5 rounded-2xl bg-white/5 border border-white/10 space-y-3">
+            <div class="flex items-center justify-between">
+                <span class="text-xs font-bold text-emerald-400 uppercase tracking-wider flex items-center">
+                    <span class="material-icons-round text-sm mr-1">check_circle</span> Reference Knowledge Representation Loaded
+                </span>
+                <span id="display-topic-badge" class="px-3 py-1 rounded-full bg-primary/20 text-primary text-xs font-bold uppercase"></span>
+            </div>
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 text-xs">
+                <div class="p-3 rounded-xl bg-black/40 border border-white/5">
+                    <span class="text-slate-400 font-semibold block mb-1">Extracted Core Concepts:</span>
+                    <div id="display-concepts-list" class="flex flex-wrap gap-1.5"></div>
+                </div>
+                <div class="p-3 rounded-xl bg-black/40 border border-white/5">
+                    <span class="text-slate-400 font-semibold block mb-1">Extracted Relationships:</span>
+                    <div id="display-relationships-list" class="space-y-1 font-mono text-[11px] text-slate-300"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+
+    <!-- STEP 2: EXPLAIN WHAT YOU LEARNED (LIVE OR RECORDED) -->
+    <div class="glass-panel p-6 lg:p-8 rounded-3xl border border-white/10 shadow-2xl space-y-6">
+        <div class="flex items-center justify-between border-b border-white/10 pb-4">
+            <div class="flex items-center space-x-3">
+                <div class="w-10 h-10 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold">2</div>
+                <div>
+                    <h3 class="text-lg font-bold text-white">Explain What You Learned in Sign Language</h3>
+                    <p class="text-xs text-slate-400">Choose between live camera explanation or uploading a pre-recorded video.</p>
+                </div>
+            </div>
+            
+            <!-- Mode Switcher Tabs -->
+            <div class="flex p-1 rounded-xl bg-white/5 border border-white/10 text-xs font-semibold">
+                <button id="tab-live-btn" onclick="switchExplanationMode('live')" 
+                        class="px-4 py-2 rounded-lg bg-primary text-white shadow-md transition-all flex items-center">
+                    <span class="material-icons-round text-sm mr-1.5">videocam</span> Live Explanation
+                </button>
+                <button id="tab-recorded-btn" onclick="switchExplanationMode('recorded')" 
+                        class="px-4 py-2 rounded-lg text-slate-400 hover:text-white transition-all flex items-center">
+                    <span class="material-icons-round text-sm mr-1.5">file_upload</span> Upload Recorded Video
+                </button>
+            </div>
+        </div>
+
+        <!-- MODE A: LIVE EXPLANATION WEBCAM VIEWPORT -->
+        <div id="mode-live-viewport" class="space-y-4">
+            <div class="flex items-center justify-between">
+                <div>
+                    <span class="text-[11px] font-bold text-primary uppercase tracking-widest block">Reference Topic:</span>
+                    <h4 id="live-active-topic" class="text-xl font-black text-white">Photosynthesis</h4>
+                </div>
+                <div id="camera-status-pill" class="px-3 py-1 rounded-full bg-white/5 border border-white/10 text-xs text-slate-400 font-semibold flex items-center">
+                    <span class="w-2 h-2 rounded-full bg-slate-500 mr-2"></span> Camera Off
+                </div>
+            </div>
+
+            <!-- Camera Viewport with Live Landmark Canvas -->
+            <div class="relative w-full aspect-video max-h-[440px] bg-black/80 rounded-2xl overflow-hidden border border-white/10 flex items-center justify-center shadow-inner group">
+                <video id="webcam-video" class="w-full h-full object-contain hidden" style="transform: scaleX(-1); transform-origin: center;" autoplay playsinline muted></video>
+                <canvas id="hand-canvas-overlay" class="absolute inset-0 w-full h-full object-contain pointer-events-none hidden" style="transform: scaleX(-1); transform-origin: center;"></canvas>
+
+                <!-- Camera Off Placeholder -->
+                <div id="webcam-placeholder" class="text-center p-6 space-y-3">
+                    <div class="w-16 h-16 rounded-2xl bg-white/5 text-slate-400 flex items-center justify-center mx-auto border border-white/5">
+                        <span class="material-icons-round text-4xl">videocam_off</span>
+                    </div>
+                    <div>
+                        <h5 class="text-sm font-bold text-white">Camera is currently off</h5>
+                        <p class="text-xs text-slate-400 mt-1 max-w-xs mx-auto">
+                            Click "Start Live Explanation" to open camera, track ISL signs, and record your explanation.
+                        </p>
+                    </div>
+                </div>
+
+                <!-- Analysis / Countdown Overlay -->
+                <div id="live-recording-overlay" class="absolute inset-0 bg-black/85 backdrop-blur-sm flex flex-col items-center justify-center text-center p-6 z-30 hidden">
+                    <div id="overlay-countdown" class="text-6xl font-black text-primary animate-ping mb-2">3</div>
+                    <h4 id="overlay-title" class="text-lg font-black text-white">Get Ready...</h4>
+                    <p id="overlay-sub" class="text-xs text-slate-300 mt-1 max-w-sm">Center your hands and explain your understanding in ISL.</p>
+                    <div class="w-48 bg-white/10 rounded-full h-2 mt-4 overflow-hidden hidden" id="live-progress-container">
+                        <div id="live-progress-bar" class="bg-primary h-2 rounded-full transition-all duration-100" style="width: 0%"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Live Camera Control Buttons -->
+            <div class="flex flex-col sm:flex-row items-center gap-3">
+                <button id="start-live-btn" onclick="startLiveExplanation()" 
+                        class="w-full sm:flex-1 py-3.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white font-bold text-xs shadow-lg shadow-emerald-500/20 transition-all flex items-center justify-center">
+                    <span class="material-icons-round text-base mr-2">videocam</span> Start Live Explanation
+                </button>
+                <button id="stop-analyze-btn" onclick="stopAndAnalyzeLive()" disabled
+                        class="w-full sm:flex-1 py-3.5 rounded-xl bg-primary/40 text-slate-400 font-bold text-xs border border-white/10 transition-all flex items-center justify-center cursor-not-allowed">
+                    <span class="material-icons-round text-base mr-2">analytics</span> Stop & Analyze Explanation
+                </button>
+            </div>
+        </div>
+
+        <!-- MODE B: RECORDED VIDEO UPLOAD VIEWPORT -->
+        <div id="mode-recorded-viewport" class="space-y-4 hidden">
+            <div class="p-8 rounded-2xl bg-white/5 border-2 border-dashed border-white/15 text-center space-y-3">
+                <div class="w-16 h-16 rounded-2xl bg-primary/20 text-primary flex items-center justify-center mx-auto border border-white/10">
+                    <span class="material-icons-round text-3xl">cloud_upload</span>
+                </div>
+                <div>
+                    <h4 class="text-base font-bold text-white">Upload Recorded Explanation Video</h4>
+                    <p class="text-xs text-slate-400 mt-1">Supported video formats: MP4, WebM (Max 50MB)</p>
+                </div>
+                <input type="file" id="recorded-video-file" accept="video/mp4,video/webm"
+                       class="block w-full max-w-sm mx-auto text-xs text-slate-400 file:mr-3 file:py-2.5 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-primary file:text-white hover:file:bg-primary/90 transition-all cursor-pointer">
+            </div>
+
+            <button onclick="handleAnalyzeRecordedVideo()" 
+                    class="w-full py-3.5 rounded-xl bg-primary hover:bg-primary/90 text-white font-bold text-xs shadow-lg shadow-primary/25 transition-all flex items-center justify-center">
+                <span class="material-icons-round text-base mr-2">smart_display</span> Upload & Run Concept Recognition
+            </button>
+        </div>
+    </div>
+
+
+    <!-- STEP 3: STUDENT INTERPRETATION CONFIRMATION (REQUIREMENT 9) -->
+    <div id="reconstruction-confirmation-card" class="hidden glass-panel p-6 lg:p-8 rounded-3xl border border-amber-500/30 bg-amber-500/5 shadow-2xl space-y-4">
+        <div class="flex items-start space-x-3">
+            <span class="material-icons-round text-amber-400 text-2xl flex-shrink-0 mt-0.5">record_voice_over</span>
+            <div class="space-y-2 flex-1">
+                <h4 class="text-base font-bold text-white">Confirm Reconstructed Explanation</h4>
+                <p class="text-xs text-slate-300 leading-relaxed">
+                    We interpreted your sign-language explanation as:
+                </p>
+                <div class="p-4 rounded-xl bg-black/60 border border-amber-500/30">
+                    <p id="reconstructed-text-display" class="text-sm font-semibold text-amber-200 italic"></p>
+                </div>
+                
+                <div class="pt-2 flex flex-col sm:flex-row items-center gap-3">
+                    <button onclick="confirmInterpretationAndProceed()" 
+                            class="px-6 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-bold shadow-md transition-all flex items-center">
+                        <span class="material-icons-round text-sm mr-1.5">check_circle</span> Correct Interpretation
+                    </button>
+                    <button onclick="toggleAdjustInterpretation()" 
+                            class="px-6 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-slate-200 text-xs font-semibold border border-white/10 transition-all flex items-center">
+                        <span class="material-icons-round text-sm mr-1.5">edit</span> Recognition Was Wrong / Adjust
+                    </button>
+                </div>
+
+                <!-- Adjustment input field -->
+                <div id="adjust-input-box" class="hidden pt-3 space-y-2">
+                    <label class="block text-xs font-semibold text-slate-300">Edit or type exact intended explanation:</label>
+                    <input type="text" id="adjusted-explanation-input" 
+                           class="w-full px-4 py-2.5 rounded-xl bg-white/5 border border-white/20 text-white text-xs font-medium focus:outline-none focus:border-primary">
+                    <button onclick="submitAdjustedExplanation()" 
+                            class="px-5 py-2 rounded-xl bg-primary text-white text-xs font-bold">
+                        Submit Corrected Explanation
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+
+    <!-- STEP 4: LOW RECOGNITION CONFIDENCE SAFETY WARNING (REQUIREMENT 8 & 15) -->
+    <div id="low-confidence-warning-card" class="hidden glass-panel p-6 rounded-3xl border border-rose-500/30 bg-rose-500/10 text-rose-200 space-y-3">
+        <div class="flex items-start space-x-3">
+            <span class="material-icons-round text-rose-400 text-3xl flex-shrink-0 mt-0.5">warning</span>
+            <div>
+                <h4 class="text-base font-bold text-white">Sign Recognition Confidence Too Low</h4>
+                <p id="low-confidence-message" class="text-xs text-slate-300 mt-1 leading-relaxed"></p>
+                <div class="mt-3 p-3 rounded-xl bg-black/40 text-xs text-slate-400">
+                    <strong>Note:</strong> We separated the <span class="text-rose-300 font-semibold">Sign Recognition Confidence</span> from your <span class="text-emerald-300 font-semibold">Concept Understanding Score</span>. We will not falsely score your knowledge when sign tracking is unclear.
+                </div>
+                <button onclick="document.getElementById('start-live-btn').click()" class="mt-3 px-5 py-2 rounded-xl bg-rose-500 hover:bg-rose-600 text-white text-xs font-bold shadow-md">
+                    Try Recording Explanation Again
+                </button>
+            </div>
+        </div>
+    </div>
+
+
+    <!-- STEP 5: RESULTS & ASSESSMENT DASHBOARD (REQUIREMENTS 16, 17, 18, 19, 20) -->
+    <div id="assessment-results-panel" class="hidden space-y-8">
+        
+        <!-- Summary Cards Header (Requirement 16) -->
+        <div class="glass-panel p-6 lg:p-8 rounded-3xl border border-white/10 shadow-2xl space-y-6">
+            <div class="flex items-center justify-between border-b border-white/10 pb-4">
+                <div>
+                    <span class="text-[11px] font-bold text-primary uppercase tracking-widest block">Concept Understanding Report</span>
+                    <h3 id="result-topic-title" class="text-2xl font-black text-white">Photosynthesis</h3>
+                </div>
+                <span class="px-4 py-1.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-xs font-bold text-emerald-400 uppercase">
+                    Assessment Complete
+                </span>
+            </div>
+
+            <!-- Metric Cards Row (Requirements 8 & 14) -->
+            <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                <!-- Card A: Sign Recognition Confidence -->
+                <div class="p-4 rounded-2xl bg-white/5 border border-white/5 space-y-1">
+                    <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Sign Recognition Confidence</span>
+                    <p id="metric-rec-confidence" class="text-2xl lg:text-3xl font-black text-purple-400">91%</p>
+                    <p class="text-[11px] text-slate-500">Separated CV tracking confidence</p>
+                </div>
+
+                <!-- Card B: Concept Coverage -->
+                <div class="p-4 rounded-2xl bg-white/5 border border-white/5 space-y-1">
+                    <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Concept Coverage</span>
+                    <p id="metric-concept-coverage" class="text-2xl lg:text-3xl font-black text-primary">82%</p>
+                    <p class="text-[11px] text-slate-500">Correctly represented required concepts</p>
+                </div>
+
+                <!-- Card C: Relationship Accuracy -->
+                <div class="p-4 rounded-2xl bg-white/5 border border-white/5 space-y-1">
+                    <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Relationship Accuracy</span>
+                    <p id="metric-rel-accuracy" class="text-2xl lg:text-3xl font-black text-emerald-400">76%</p>
+                    <p class="text-[11px] text-slate-500">Matched cause & effect connections</p>
+                </div>
+
+                <!-- Card D: Overall Understanding Score -->
+                <div class="p-4 rounded-2xl bg-gradient-to-br from-primary/20 to-indigo-600/20 border border-primary/30 space-y-1">
+                    <span class="text-[10px] font-bold text-primary uppercase tracking-wider block">Overall Understanding Score</span>
+                    <p id="metric-overall-score" class="text-2xl lg:text-3xl font-black text-white">84%</p>
+                    <p class="text-[11px] text-slate-400">0.50×Coverage + 0.40×Rel + 0.10×Comp</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- CHARTS GRID (REQUIREMENTS 17 & 18) -->
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            <!-- Chart 1: Concept Understanding Bar Chart (Requirement 17) -->
+            <div class="lg:col-span-7 glass-panel p-6 rounded-3xl border border-white/10 shadow-2xl space-y-4">
+                <div class="flex items-center justify-between">
+                    <h4 class="text-base font-bold text-white flex items-center">
+                        <span class="material-icons-round text-primary mr-2 text-lg">bar_chart</span>
+                        Concept Understanding Breakdown
+                    </h4>
+                    <span class="text-xs text-slate-400">Data-driven scoring</span>
+                </div>
+                <div class="h-64 relative">
+                    <canvas id="chart-concept-bar"></canvas>
+                </div>
+            </div>
+
+            <!-- Chart 2: Category Summary Chart (Requirement 18) -->
+            <div class="lg:col-span-5 glass-panel p-6 rounded-3xl border border-white/10 shadow-2xl space-y-4">
+                <div class="flex items-center justify-between">
+                    <h4 class="text-base font-bold text-white flex items-center">
+                        <span class="material-icons-round text-emerald-400 mr-2 text-lg">pie_chart</span>
+                        Category Summary
+                    </h4>
+                    <span class="text-xs text-slate-400">Reference concepts</span>
+                </div>
+                <div class="h-64 relative flex items-center justify-center">
+                    <canvas id="chart-category-pie"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- CONCEPT CLASSIFICATION DETAILED LIST (REQUIREMENT 13 & 16) -->
+        <div class="glass-panel p-6 lg:p-8 rounded-3xl border border-white/10 shadow-2xl space-y-4">
+            <h4 class="text-lg font-bold text-white flex items-center">
+                <span class="material-icons-round text-primary mr-2">rule</span>
+                Detailed Concept & Misconception Analysis
+            </h4>
+
+            <div id="concept-classification-list" class="space-y-3">
+                <!-- Populated dynamically via JS -->
+            </div>
+        </div>
+
+        <!-- KNOWLEDGE GRAPH VISUALIZATION (REQUIREMENT 12 & 19) -->
+        <div class="glass-panel p-6 lg:p-8 rounded-3xl border border-white/10 shadow-2xl space-y-6">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-white/10 pb-4">
+                <div>
+                    <span class="text-[11px] font-bold text-primary uppercase tracking-widest block">Interactive Graph Comparison</span>
+                    <h4 class="text-xl font-black text-white">Reference Knowledge vs Student Understanding</h4>
+                </div>
+                
+                <div class="flex flex-wrap items-center gap-3 text-xs">
+                    <span class="flex items-center text-emerald-400"><span class="w-3 h-3 rounded-full bg-emerald-500 mr-1.5"></span> Understood</span>
+                    <span class="flex items-center text-amber-400"><span class="w-3 h-3 rounded-full bg-amber-500 mr-1.5"></span> Partial</span>
+                    <span class="flex items-center text-rose-400"><span class="w-3 h-3 rounded-full bg-rose-500 mr-1.5"></span> Missing</span>
+                    <span class="flex items-center text-red-500"><span class="w-3 h-3 rounded-full bg-red-600 mr-1.5"></span> Misconception</span>
+                </div>
+            </div>
+
+            <!-- SVG Graph Canvas Container -->
+            <div class="w-full bg-black/60 rounded-2xl border border-white/10 p-6 overflow-x-auto min-h-[320px] flex items-center justify-center">
+                <svg id="knowledge-graph-svg" class="w-full h-80 max-w-4xl overflow-visible">
+                    <defs>
+                        <marker id="arrow" viewBox="0 0 10 10" refX="22" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                            <path d="M 0 0 L 10 5 L 0 10 z" fill="rgba(255,255,255,0.4)"/>
+                        </marker>
+                    </defs>
+                    <g id="graph-edges-layer"></g>
+                    <g id="graph-nodes-layer"></g>
+                </svg>
+            </div>
+        </div>
+
+        <!-- TARGETED RELEARNING & REASSESSMENT (REQUIREMENTS 21, 22, 23) -->
+        <div class="glass-panel p-6 lg:p-8 rounded-3xl border border-white/10 shadow-2xl space-y-6">
+            <div class="flex items-center justify-between border-b border-white/10 pb-4">
+                <div>
+                    <span class="text-[11px] font-bold text-primary uppercase tracking-widest block">Targeted Learning & Reassessment</span>
+                    <h4 class="text-xl font-black text-white">Relearn Missing Concepts & Track Improvement</h4>
+                </div>
+                
+                <button onclick="prepareReassessment()" class="px-5 py-2.5 rounded-xl bg-primary hover:bg-primary/90 text-white font-bold text-xs shadow-lg shadow-primary/25 transition-all flex items-center">
+                    <span class="material-icons-round text-base mr-1.5">replay</span> Explain Again & Reassess
+                </button>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                <!-- Relearning Micro-Lesson Card -->
+                <div class="lg:col-span-6 p-6 rounded-2xl bg-white/5 border border-white/10 space-y-4">
+                    <h5 class="text-sm font-bold text-white flex items-center">
+                        <span class="material-icons-round text-amber-400 mr-2 text-base">school</span>
+                        Targeted Micro-Lesson
+                    </h5>
+                    
+                    <div id="relearn-content-box" class="space-y-3">
+                        <p class="text-xs text-slate-300">Click any missing or partial concept button below to view targeted visual explanation.</p>
+                        <div id="relearn-buttons-row" class="flex flex-wrap gap-2"></div>
+                    </div>
+
+                    <!-- Relearn Modal Details -->
+                    <div id="relearn-detail-card" class="hidden p-4 rounded-xl bg-black/50 border border-primary/30 space-y-2">
+                        <h6 id="relearn-title" class="text-sm font-bold text-primary"></h6>
+                        <p id="relearn-text" class="text-xs text-slate-300 leading-relaxed"></p>
+                        <div class="pt-2 text-[11px] text-emerald-400 font-semibold flex items-center">
+                            <span class="material-icons-round text-xs mr-1">check</span>
+                            <span id="relearn-takeaway"></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Learning Improvement Line Chart (Requirement 23) -->
+                <div class="lg:col-span-6 p-6 rounded-2xl bg-white/5 border border-white/10 space-y-4">
+                    <h5 class="text-sm font-bold text-white flex items-center justify-between">
+                        <span class="flex items-center">
+                            <span class="material-icons-round text-emerald-400 mr-2 text-base">trending_up</span>
+                            Learning Improvement Line Chart
+                        </span>
+                        <span class="text-[11px] text-slate-400 font-normal">Across Attempts</span>
+                    </h5>
+                    
+                    <div class="h-52 relative">
+                        <canvas id="chart-improvement-line"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- RECENT ATTEMPTS TABLE (REQUIREMENT 22) -->
+    <div id="recent-attempts-section" class="glass-panel p-6 lg:p-8 rounded-3xl border border-white/10 shadow-2xl space-y-4">
+        <h4 class="text-lg font-bold text-white flex items-center">
+            <span class="material-icons-round text-primary mr-2">history</span>
+            Your Past Concept Assessment History
+        </h4>
+
+        <div class="overflow-x-auto">
+            <table class="w-full text-left border-collapse text-xs">
+                <thead>
+                    <tr class="border-b border-white/10 text-slate-400 font-semibold uppercase tracking-wider">
+                        <th class="py-3 px-4">Topic</th>
+                        <th class="py-3 px-4">Mode</th>
+                        <th class="py-3 px-4">Sign Recognition</th>
+                        <th class="py-3 px-4">Concept Coverage</th>
+                        <th class="py-3 px-4">Relationship Accuracy</th>
+                        <th class="py-3 px-4">Overall Score</th>
+                        <th class="py-3 px-4">Date</th>
+                        <th class="py-3 px-4 text-right">Action</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-white/5 text-slate-300 font-medium">
+                    {% for a in recent_assessments %}
+                    <tr class="hover:bg-white/5 transition-colors">
+                        <td class="py-3 px-4 font-bold text-white">{{ a.topic }}</td>
+                        <td class="py-3 px-4 uppercase text-[11px]">{{ a.explanation_source }}</td>
+                        <td class="py-3 px-4 font-bold text-purple-400">{% widthratio a.recognition_confidence 1 100 %}%</td>
+                        <td class="py-3 px-4 font-bold text-primary">{% widthratio a.concept_coverage 1 100 %}%</td>
+                        <td class="py-3 px-4 font-bold text-emerald-400">{% widthratio a.relationship_accuracy 1 100 %}%</td>
+                        <td class="py-3 px-4 font-extrabold text-white">{% widthratio a.overall_understanding_score 1 100 %}%</td>
+                        <td class="py-3 px-4 text-slate-400">{{ a.created_at|date:"H:i, d M Y" }}</td>
+                        <td class="py-3 px-4 text-right">
+                            <a href="{% url 'teacher_review' a.id %}" class="px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-slate-200 text-[11px] font-semibold transition-all">
+                                Teacher Review
+                            </a>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="8" class="py-6 text-center text-slate-500">No previous assessments recorded yet. Start your first assessment above!</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+</div>
+{% endblock %}
+
+
+{% block extra_js %}
+<script>
+const CSRF_TOKEN = '{{ csrf_token }}';
+
+// State variables
+let activeReferenceData = null;
+let activeMode = 'live';
+let isCameraActive = false;
+let isRecording = false;
+let mediaStream = null;
+let handsDetector = null;
+let animationFrameId = null;
+let isProcessingFrame = false;
+let recordedFrames = [];
+let pendingAssessmentData = null;
+
+let chartBarInstance = null;
+let chartPieInstance = null;
+let chartLineInstance = null;
+
+// =====================================================================
+// 1. SAVE REFERENCE CONCEPT (REQUIREMENT 3 & 4)
+// =====================================================================
+async function handleSaveReference(e) {
+    if (e) e.preventDefault();
+
+    const form = document.getElementById('reference-setup-form');
+    const formData = new FormData(form);
+
+    const saveBtn = document.getElementById('save-reference-btn');
+    saveBtn.disabled = true;
+    saveBtn.innerHTML = '<span class="material-icons-round text-base mr-1.5 animate-spin">sync</span> Extracting Knowledge Representation...';
+
+    try {
+        const resp = await fetch("{% url 'concept_assessment_save_reference' %}", {
+            method: 'POST',
+            body: formData
+        });
+        const data = await resp.json();
+
+        if (data.status === 'ok') {
+            activeReferenceData = data;
+            
+            // Render Loaded Knowledge Representation Schema
+            document.getElementById('saved-reference-display').classList.remove('hidden');
+            document.getElementById('display-topic-badge').textContent = data.topic;
+            document.getElementById('live-active-topic').textContent = data.topic;
+            document.getElementById('reference-status-badge').className = 'px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-xs font-semibold flex items-center';
+            document.getElementById('reference-status-badge').innerHTML = '<span class="material-icons-round text-xs mr-1">check_circle</span> Concept Ready';
+
+            // Core concepts pills
+            const cContainer = document.getElementById('display-concepts-list');
+            cContainer.innerHTML = (data.reference_concepts_json.concepts || []).map(c => `
+                <span class="px-2.5 py-1 rounded-lg bg-primary/20 text-primary border border-primary/30 font-semibold uppercase">
+                    ${c}
+                </span>
+            `).join('');
+
+            // Relationships list
+            const rContainer = document.getElementById('display-relationships-list');
+            rContainer.innerHTML = (data.reference_concepts_json.relationships || []).map(r => `
+                <div>${r.source} &rarr; <span class="text-emerald-400">${r.relation}</span> &rarr; ${r.target}</div>
+            `).join('');
+
+        } else {
+            alert(data.message || 'Error parsing reference concept.');
+        }
+    } catch (err) {
+        console.error('Error saving reference concept:', err);
+        alert('Could not process reference concept. Please try again.');
+    } finally {
+        saveBtn.disabled = false;
+        saveBtn.innerHTML = '<span class="material-icons-round text-base mr-1.5">save</span> Save Concept Representation';
+    }
+}
+
+function handleSectionSelect(sel) {
+    if (sel.value) {
+        document.getElementById('input-topic').value = sel.options[sel.selectedIndex].text.split(':')[1]?.trim() || 'Course Concept';
+    }
+}
+
+
+// =====================================================================
+// 2. EXPLANATION MODE SWITCHING (REQUIREMENTS 5 & 6)
+// =====================================================================
+function switchExplanationMode(mode) {
+    activeMode = mode;
+    const tabLive = document.getElementById('tab-live-btn');
+    const tabRec = document.getElementById('tab-recorded-btn');
+
+    const vLive = document.getElementById('mode-live-viewport');
+    const vRec = document.getElementById('mode-recorded-viewport');
+
+    if (mode === 'live') {
+        tabLive.className = 'px-4 py-2 rounded-lg bg-primary text-white shadow-md transition-all flex items-center';
+        tabRec.className = 'px-4 py-2 rounded-lg text-slate-400 hover:text-white transition-all flex items-center';
+        vLive.classList.remove('hidden');
+        vRec.classList.add('hidden');
+    } else {
+        tabRec.className = 'px-4 py-2 rounded-lg bg-primary text-white shadow-md transition-all flex items-center';
+        tabLive.className = 'px-4 py-2 rounded-lg text-slate-400 hover:text-white transition-all flex items-center';
+        vRec.classList.remove('hidden');
+        vLive.classList.add('hidden');
+        stopLiveCamera();
+    }
+}
+
+
+// =====================================================================
+// 3. LIVE WEBCAM & MEDIAPIPE LANDMARK TRACKING (REQUIREMENT 7)
+// =====================================================================
+async function initMediaPipeHands() {
+    if (handsDetector) return handsDetector;
+    try {
+        handsDetector = new Hands({
+            locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/${file}`
+        });
+        handsDetector.setOptions({
+            maxNumHands: 2,
+            modelComplexity: 1,
+            minDetectionConfidence: 0.5,
+            minTrackingConfidence: 0.5
+        });
+        handsDetector.onResults(onHandResults);
+        if (typeof handsDetector.initialize === 'function') {
+            await handsDetector.initialize();
+        }
+        return handsDetector;
+    } catch (e) {
+        console.error('MediaPipe Hands init warning:', e);
+        return null;
+    }
+}
+
+async function startLiveExplanation() {
+    if (!activeReferenceData) {
+        await handleSaveReference();
+        if (!activeReferenceData) return;
+    }
+
+    try {
+        mediaStream = await navigator.mediaDevices.getUserMedia({
+            video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: 'user' },
+            audio: false
+        });
+
+        const video = document.getElementById('webcam-video');
+        const canvas = document.getElementById('hand-canvas-overlay');
+        const placeholder = document.getElementById('webcam-placeholder');
+
+        video.srcObject = mediaStream;
+        await video.play();
+
+        canvas.width = video.videoWidth || 640;
+        canvas.height = video.videoHeight || 480;
+
+        video.classList.remove('hidden');
+        canvas.classList.remove('hidden');
+        placeholder.classList.add('hidden');
+
+        isCameraActive = true;
+        document.getElementById('camera-status-pill').className = 'px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-xs font-semibold flex items-center';
+        document.getElementById('camera-status-pill').innerHTML = '<span class="w-2 h-2 rounded-full bg-emerald-400 mr-2 animate-pulse"></span> Live Stream Active';
+
+        document.getElementById('start-live-btn').disabled = true;
+        document.getElementById('start-live-btn').classList.add('opacity-50');
+
+        const stopBtn = document.getElementById('stop-analyze-btn');
+        stopBtn.disabled = false;
+        stopBtn.classList.remove('opacity-40', 'cursor-not-allowed');
+        stopBtn.className = 'w-full sm:flex-1 py-3.5 rounded-xl bg-primary hover:bg-primary/90 text-white font-bold text-xs shadow-lg shadow-primary/25 transition-all flex items-center justify-center';
+
+        await initMediaPipeHands();
+        if (animationFrameId) cancelAnimationFrame(animationFrameId);
+        animationFrameId = requestAnimationFrame(processWebcamFrame);
+
+        // Countdown & Record Start
+        const overlay = document.getElementById('live-recording-overlay');
+        const countEl = document.getElementById('overlay-countdown');
+        overlay.classList.remove('hidden');
+
+        let cnt = 3;
+        countEl.textContent = cnt;
+        const timer = setInterval(() => {
+            cnt--;
+            if (cnt > 0) {
+                countEl.textContent = cnt;
+            } else {
+                clearInterval(timer);
+                countEl.textContent = 'GO!';
+                document.getElementById('overlay-title').textContent = 'Explain Now in ISL...';
+                document.getElementById('overlay-sub').textContent = 'Perform your full sign-language explanation clearly.';
+                document.getElementById('live-progress-container').classList.remove('hidden');
+                
+                recordedFrames = [];
+                isRecording = true;
+
+                setTimeout(() => {
+                    overlay.classList.add('hidden');
+                }, 1000);
+            }
+        }, 800);
+
+    } catch (err) {
+        console.error('Camera access error:', err);
+        alert('Could not start live webcam. Please check permissions.');
+        stopLiveCamera();
+    }
+}
+
+async function processWebcamFrame() {
+    if (!isCameraActive) return;
+    const video = document.getElementById('webcam-video');
+    if (handsDetector && video.readyState >= 2 && !video.paused) {
+        if (!isProcessingFrame) {
+            isProcessingFrame = true;
+            try {
+                await handsDetector.send({ image: video });
+            } catch (e) {}
+            finally {
+                isProcessingFrame = false;
+            }
+        }
+    }
+    if (isCameraActive) animationFrameId = requestAnimationFrame(processWebcamFrame);
+}
+
+function onHandResults(results) {
+    if (!isCameraActive) return;
+    const video = document.getElementById('webcam-video');
+    const canvas = document.getElementById('hand-canvas-overlay');
+    const ctx = canvas.getContext('2d');
+
+    if (canvas.width !== video.videoWidth || canvas.height !== video.videoHeight) {
+        canvas.width = video.videoWidth || 640;
+        canvas.height = video.videoHeight || 480;
+    }
+
+    ctx.save();
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+        for (const lms of results.multiHandLandmarks) {
+            drawHandSkeleton(lms, ctx, canvas.width, canvas.height);
+            if (isRecording) {
+                recordedFrames.push({
+                    timestamp: Date.now(),
+                    landmarks: lms.map(p => ({ x: p.x, y: p.y, z: p.z }))
+                });
+            }
+        }
+    }
+    ctx.restore();
+}
+
+function drawHandSkeleton(landmarks, ctx, width, height) {
+    const connections = [
+        [0, 1], [1, 2], [2, 3], [3, 4],
+        [0, 5], [5, 6], [6, 7], [7, 8],
+        [9, 10], [10, 11], [11, 12],
+        [13, 14], [14, 15], [15, 16],
+        [0, 17], [17, 18], [18, 19], [19, 20],
+        [5, 9], [9, 13], [13, 17]
+    ];
+
+    ctx.save();
+    ctx.shadowColor = 'rgba(6, 182, 212, 0.7)';
+    ctx.shadowBlur = 8;
+    ctx.strokeStyle = '#22d3ee';
+    ctx.lineWidth = 3;
+
+    for (const [s, e] of connections) {
+        const p1 = landmarks[s];
+        const p2 = landmarks[e];
+        ctx.beginPath();
+        ctx.moveTo(p1.x * width, p1.y * height);
+        ctx.lineTo(p2.x * width, p2.y * height);
+        ctx.stroke();
+    }
+    ctx.restore();
+
+    for (let i = 0; i < landmarks.length; i++) {
+        const p = landmarks[i];
+        ctx.beginPath();
+        ctx.arc(p.x * width, p.y * height, i === 0 ? 6 : (i % 4 === 0 ? 5 : 3), 0, 2 * Math.PI);
+        ctx.fillStyle = i === 0 ? '#10b981' : (i % 4 === 0 ? '#f43f5e' : '#38bdf8');
+        ctx.fill();
+    }
+}
+
+function stopLiveCamera() {
+    isCameraActive = false;
+    isRecording = false;
+    if (animationFrameId) cancelAnimationFrame(animationFrameId);
+    if (mediaStream) {
+        mediaStream.getTracks().forEach(t => t.stop());
+        mediaStream = null;
+    }
+    const video = document.getElementById('webcam-video');
+    const canvas = document.getElementById('hand-canvas-overlay');
+    const placeholder = document.getElementById('webcam-placeholder');
+
+    if (video) { video.pause(); video.srcObject = null; video.classList.add('hidden'); }
+    if (canvas) canvas.classList.add('hidden');
+    if (placeholder) placeholder.classList.remove('hidden');
+
+    document.getElementById('start-live-btn').disabled = false;
+    document.getElementById('start-live-btn').classList.remove('opacity-50');
+    document.getElementById('camera-status-pill').className = 'px-3 py-1 rounded-full bg-white/5 border border-white/10 text-xs text-slate-400 font-semibold flex items-center';
+    document.getElementById('camera-status-pill').innerHTML = '<span class="w-2 h-2 rounded-full bg-slate-500 mr-2"></span> Camera Off';
+}
+
+async function stopAndAnalyzeLive() {
+    isRecording = false;
+    stopLiveCamera();
+
+    const payload = {
+        topic: activeReferenceData ? activeReferenceData.topic : 'Photosynthesis',
+        reference_text: activeReferenceData ? activeReferenceData.reference_text : '',
+        reference_concepts_json: activeReferenceData ? activeReferenceData.reference_concepts_json : {},
+        explanation_source: 'live',
+        frames: recordedFrames
+    };
+
+    await executeAssessmentPipeline(payload);
+}
+
+
+// =====================================================================
+// 4. RECORDED VIDEO UPLOAD & ANALYZE (REQUIREMENT 6)
+// =====================================================================
+async function handleAnalyzeRecordedVideo() {
+    if (!activeReferenceData) {
+        await handleSaveReference();
+        if (!activeReferenceData) return;
+    }
+
+    const fileInput = document.getElementById('recorded-video-file');
+    if (!fileInput.files || fileInput.files.length === 0) {
+        alert('Please select a recorded MP4 or WebM video file.');
+        return;
+    }
+
+    const formData = new FormData();
+    formData.append('topic', activeReferenceData.topic);
+    formData.append('reference_text', activeReferenceData.reference_text);
+    formData.append('reference_concepts_json', JSON.stringify(activeReferenceData.reference_concepts_json));
+    formData.append('explanation_source', 'recorded');
+    formData.append('video_file', fileInput.files[0]);
+
+    await executeAssessmentPipeline(formData, isFormData=true);
+}
+
+
+// =====================================================================
+// 5. EXECUTE ASSESSMENT PIPELINE & VERIFY CONFIDENCE (REQUIREMENTS 8 & 9)
+// =====================================================================
+async function executeAssessmentPipeline(payload, isFormData=false, confirmedExplanation="") {
+    // Hide previous state cards
+    document.getElementById('low-confidence-warning-card').classList.add('hidden');
+    document.getElementById('reconstruction-confirmation-card').classList.add('hidden');
+    document.getElementById('assessment-results-panel').classList.add('hidden');
+
+    try {
+        let options = { method: 'POST' };
+        if (isFormData) {
+            if (confirmedExplanation) payload.append('confirmed_explanation', confirmedExplanation);
+            options.body = payload;
+        } else {
+            if (confirmedExplanation) payload.confirmed_explanation = confirmedExplanation;
+            options.headers = { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF_TOKEN };
+            options.body = JSON.stringify(payload);
+        }
+
+        const resp = await fetch("{% url 'concept_assessment_analyze' %}", options);
+        const data = await resp.json();
+
+        // 1. Check Confidence Safety (Requirement 8 & 15)
+        if (data.status === 'low_recognition_confidence') {
+            document.getElementById('low-confidence-warning-card').classList.remove('hidden');
+            document.getElementById('low-confidence-message').textContent = data.message;
+            return;
+        }
+
+        if (data.status === 'ok') {
+            pendingAssessmentData = { payload, isFormData, serverData: data };
+
+            // 2. Student Confirmation Step (Requirement 9)
+            if (!confirmedExplanation) {
+                document.getElementById('reconstruction-confirmation-card').classList.remove('hidden');
+                document.getElementById('reconstructed-text-display').textContent = data.reconstructed_explanation;
+                return;
+            }
+
+            // 3. Render Final Results Dashboard
+            renderResultsDashboard(data);
+        } else {
+            alert(data.message || 'Assessment error.');
+        }
+
+    } catch (err) {
+        console.error('Assessment pipeline error:', err);
+        alert('Could not complete concept assessment. Please check network connection.');
+    }
+}
+
+function confirmInterpretationAndProceed() {
+    if (pendingAssessmentData) {
+        const text = pendingAssessmentData.serverData.reconstructed_explanation;
+        executeAssessmentPipeline(pendingAssessmentData.payload, pendingAssessmentData.isFormData, confirmedExplanation=text);
+    }
+}
+
+function toggleAdjustInterpretation() {
+    const box = document.getElementById('adjust-input-box');
+    box.classList.toggle('hidden');
+    if (pendingAssessmentData) {
+        document.getElementById('adjusted-explanation-input').value = pendingAssessmentData.serverData.reconstructed_explanation;
+    }
+}
+
+function submitAdjustedExplanation() {
+    const adj = document.getElementById('adjusted-explanation-input').value.trim();
+    if (adj && pendingAssessmentData) {
+        executeAssessmentPipeline(pendingAssessmentData.payload, pendingAssessmentData.isFormData, confirmedExplanation=adj);
+    }
+}
+
+
+// =====================================================================
+// 6. RENDER RESULTS DASHBOARD & CHARTS (REQUIREMENTS 16, 17, 18, 19, 20)
+// =====================================================================
+function renderResultsDashboard(data) {
+    document.getElementById('reconstruction-confirmation-card').classList.add('hidden');
+    document.getElementById('assessment-results-panel').classList.remove('hidden');
+    document.getElementById('assessment-results-panel').scrollIntoView({ behavior: 'smooth' });
+
+    document.getElementById('result-topic-title').textContent = data.topic;
+    document.getElementById('metric-rec-confidence').textContent = `${data.recognition_confidence_pct}%`;
+    document.getElementById('metric-concept-coverage').textContent = `${data.concept_coverage_pct}%`;
+    document.getElementById('metric-rel-accuracy').textContent = `${data.relationship_accuracy_pct}%`;
+    document.getElementById('metric-overall-score').textContent = `${data.overall_score_pct}%`;
+
+    // 1. Concept Classification List (Requirement 13 & 16)
+    const listContainer = document.getElementById('concept-classification-list');
+    listContainer.innerHTML = (data.concept_results || []).map(cr => {
+        let badgeClass = 'bg-emerald-500/15 border-emerald-500/30 text-emerald-400';
+        let badgeIcon = 'check_circle';
+        let badgeText = 'Understood';
+
+        if (cr.status === 'partially_understood') {
+            badgeClass = 'bg-amber-500/15 border-amber-500/30 text-amber-400';
+            badgeIcon = 'change_history';
+            badgeText = 'Partially Understood';
+        } else if (cr.status === 'missing') {
+            badgeClass = 'bg-rose-500/15 border-rose-500/30 text-rose-400';
+            badgeIcon = 'cancel';
+            badgeText = 'Missing';
+        } else if (cr.status === 'misconception') {
+            badgeClass = 'bg-red-600/20 border-red-600/40 text-red-400 font-bold';
+            badgeIcon = 'warning';
+            badgeText = 'Possible Misconception';
+        }
+
+        return `
+            <div class="p-4 rounded-2xl bg-white/5 border border-white/5 flex flex-col md:flex-row md:items-center justify-between gap-3">
+                <div class="space-y-1">
+                    <span class="text-sm font-bold text-white">${cr.concept_name}</span>
+                    <p class="text-xs text-slate-300">${cr.feedback}</p>
+                </div>
+                <span class="px-3.5 py-1.5 rounded-full text-xs font-bold border ${badgeClass} flex items-center self-start md:self-auto">
+                    <span class="material-icons-round text-sm mr-1">${badgeIcon}</span> ${badgeText}
+                </span>
+            </div>
+        `;
+    }).join('');
+
+    // Relearn buttons row
+    const relearnRow = document.getElementById('relearn-buttons-row');
+    relearnRow.innerHTML = (data.concept_results || []).filter(c => c.status !== 'understood').map(c => `
+        <button onclick="fetchRelearnConcept('${c.concept_name}')" 
+                class="px-3 py-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 border border-amber-500/30 text-xs font-semibold transition-all">
+            Learn ${c.concept_name}
+        </button>
+    `).join('') || '<span class="text-xs text-emerald-400 font-bold">✓ Great job! All reference concepts were understood.</span>';
+
+    // 2. Render Bar Chart (Requirement 17)
+    renderBarChart(data.concept_results);
+
+    // 3. Render Pie/Doughnut Summary Chart (Requirement 18)
+    renderPieChart(data.category_summary);
+
+    // 4. Render Knowledge Graph SVG (Requirement 19)
+    renderKnowledgeGraphSVG(data.reference_knowledge_graph, data.concept_results);
+
+    // 5. Render Learning Improvement Line Chart (Requirement 23)
+    renderImprovementLineChart(data.improvement_history);
+}
+
+
+// =====================================================================
+// 7. CHART.JS & KNOWLEDGE GRAPH RENDERERS (REQUIREMENTS 17, 18, 19, 23)
+// =====================================================================
+function renderBarChart(results) {
+    const ctx = document.getElementById('chart-concept-bar').getContext('2d');
+    if (chartBarInstance) chartBarInstance.destroy();
+
+    const labels = (results || []).map(r => r.concept_name);
+    const scores = (results || []).map(r => {
+        if (r.status === 'understood') return 100;
+        if (r.status === 'partially_understood') return 60;
+        if (r.status === 'missing') return 15;
+        return 30; // misconception
+    });
+
+    chartBarInstance = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: labels,
+            datasets: [{
+                label: 'Understanding Level %',
+                data: scores,
+                backgroundColor: scores.map(s => s >= 80 ? 'rgba(16, 185, 129, 0.7)' : (s >= 50 ? 'rgba(245, 158, 11, 0.7)' : 'rgba(244, 63, 94, 0.7)')),
+                borderColor: scores.map(s => s >= 80 ? '#10b981' : (s >= 50 ? '#f59e0b' : '#f43f5e')),
+                borderWidth: 2,
+                borderRadius: 8
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                y: { min: 0, max: 100, ticks: { color: '#94a3b8' }, grid: { color: 'rgba(255,255,255,0.05)' } },
+                x: { ticks: { color: '#94a3b8' }, grid: { display: false } }
+            },
+            plugins: { legend: { display: false } }
+        }
+    });
+}
+
+function renderPieChart(summary) {
+    const ctx = document.getElementById('chart-category-pie').getContext('2d');
+    if (chartPieInstance) chartPieInstance.destroy();
+
+    chartPieInstance = new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+            labels: ['Understood', 'Partially Understood', 'Missing', 'Misconception'],
+            datasets: [{
+                data: [
+                    summary.understood_pct || 0,
+                    summary.partially_understood_pct || 0,
+                    summary.missing_pct || 0,
+                    summary.misconception_pct || 0
+                ],
+                backgroundColor: ['#10b981', '#f59e0b', '#f43f5e', '#ef4444'],
+                borderWidth: 0
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { position: 'right', labels: { color: '#e2e8f0', font: { size: 11 } } }
+            }
+        }
+    });
+}
+
+function renderKnowledgeGraphSVG(refGraph, results) {
+    const nodesLayer = document.getElementById('graph-nodes-layer');
+    const edgesLayer = document.getElementById('graph-edges-layer');
+    nodesLayer.innerHTML = '';
+    edgesLayer.innerHTML = '';
+
+    const concepts = refGraph.concepts || [];
+    const rels = refGraph.relationships || [];
+
+    const resultMap = {};
+    (results || []).forEach(r => { resultMap[r.concept_name.toLowerCase()] = r.status; });
+
+    // Arrange nodes in a neat force-directed/circular layout
+    const width = 750;
+    const height = 280;
+    const cx = width / 2;
+    const cy = height / 2;
+    const radius = Math.min(cx, cy) - 50;
+
+    const nodePositions = {};
+    concepts.forEach((c, idx) => {
+        const angle = (idx / concepts.length) * 2 * Math.PI - Math.PI / 2;
+        const x = cx + radius * Math.cos(angle);
+        const y = cy + radius * Math.sin(angle);
+        nodePositions[c.toLowerCase()] = { x, y, name: c };
+    });
+
+    // Draw directed edges
+    rels.forEach(r => {
+        const s = nodePositions[str(r.source).toLowerCase()];
+        const t = nodePositions[str(r.target).toLowerCase()];
+        if (s && t) {
+            const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+            line.setAttribute('x1', s.x);
+            line.setAttribute('y1', s.y);
+            line.setAttribute('x2', t.x);
+            line.setAttribute('y2', t.y);
+            line.setAttribute('class', 'edge-line');
+            edgesLayer.appendChild(line);
+
+            // Label on edge
+            const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+            text.setAttribute('x', (s.x + t.x) / 2);
+            text.setAttribute('y', (s.y + t.y) / 2 - 4);
+            text.setAttribute('fill', '#94a3b8');
+            text.setAttribute('font-size', '10');
+            text.setAttribute('text-anchor', 'middle');
+            text.textContent = r.relation;
+            edgesLayer.appendChild(text);
+        }
+    });
+
+    // Draw nodes
+    Object.keys(nodePositions).forEach(k => {
+        const pos = nodePositions[k];
+        const status = resultMap[k] || 'understood';
+
+        let cssClass = 'node-matched';
+        if (status === 'partially_understood') cssClass = 'node-partial';
+        if (status === 'missing') cssClass = 'node-missing';
+        if (status === 'misconception') cssClass = 'node-misconception';
+
+        const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+        
+        const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+        circle.setAttribute('cx', pos.x);
+        circle.setAttribute('cy', pos.y);
+        circle.setAttribute('r', '22');
+        circle.setAttribute('class', cssClass);
+
+        const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        text.setAttribute('x', pos.x);
+        text.setAttribute('y', pos.y + 4);
+        text.setAttribute('fill', '#ffffff');
+        text.setAttribute('font-size', '11');
+        text.setAttribute('font-weight', 'bold');
+        text.setAttribute('text-anchor', 'middle');
+        text.textContent = pos.name.capitalize();
+
+        g.appendChild(circle);
+        g.appendChild(text);
+        nodesLayer.appendChild(g);
+    });
+}
+
+function renderImprovementLineChart(attempts) {
+    const ctx = document.getElementById('chart-improvement-line').getContext('2d');
+    if (chartLineInstance) chartLineInstance.destroy();
+
+    const labels = (attempts || []).map(a => `Attempt ${a.attempt_number}`);
+    const scores = (attempts || []).map(a => a.overall_score_pct);
+
+    chartLineInstance = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: labels,
+            datasets: [{
+                label: 'Overall Understanding %',
+                data: scores,
+                borderColor: '#10b981',
+                backgroundColor: 'rgba(16, 185, 129, 0.15)',
+                fill: true,
+                tension: 0.3,
+                pointRadius: 6,
+                pointBackgroundColor: '#10b981'
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                y: { min: 0, max: 100, ticks: { color: '#94a3b8' }, grid: { color: 'rgba(255,255,255,0.05)' } },
+                x: { ticks: { color: '#94a3b8' }, grid: { display: false } }
+            },
+            plugins: { legend: { display: false } }
+        }
+    });
+}
+
+
+// =====================================================================
+// 8. RELEARNING & REASSESSMENT (REQUIREMENTS 21 & 22)
+// =====================================================================
+async function fetchRelearnConcept(conceptName) {
+    try {
+        const resp = await fetch(`/concept-assessment/relearn/${encodeURIComponent(conceptName)}/`);
+        const data = await resp.json();
+        if (data.status === 'ok') {
+            const card = document.getElementById('relearn-detail-card');
+            card.classList.remove('hidden');
+            document.getElementById('relearn-title').textContent = data.relearn_data.title;
+            document.getElementById('relearn-text').textContent = data.relearn_data.explanation;
+            document.getElementById('relearn-takeaway').textContent = data.relearn_data.key_takeaway;
+        }
+    } catch (e) {
+        console.error('Relearn fetch error:', e);
+    }
+}
+
+function prepareReassessment() {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+String.prototype.capitalize = function() {
+    return this.charAt(0).toUpperCase() + this.slice(1);
+};
+</script>
+{% endblock %}

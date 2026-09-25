@@ -28,4 +28,12 @@ urlpatterns = [
     path('learn/section/<int:section_id>/quiz/check-answer/', views.learn_quiz_check_answer_api, name='learn_quiz_check_answer'),
     path('learn/section/<int:section_id>/quiz/submit/', views.learn_quiz_submit_api, name='learn_quiz_submit'),
     path('learn/section/<int:section_id>/results/', views.learn_quiz_results_view, name='learn_quiz_results'),
+
+    # Concept Understanding Assessment Feature
+    path('concept-assessment/', views.concept_assessment_view, name='concept_assessment'),
+    path('concept-assessment/save-reference/', views.concept_assessment_save_reference_api, name='concept_assessment_save_reference'),
+    path('concept-assessment/analyze/', views.concept_assessment_analyze_api, name='concept_assessment_analyze'),
+    path('concept-assessment/relearn/<str:concept_name>/', views.concept_assessment_relearn_api, name='concept_assessment_relearn'),
+    path('concept-assessment/attempts-history/', views.concept_assessment_history_api, name='concept_assessment_history'),
+    path('concept-assessment/<int:assessment_id>/teacher-review/', views.teacher_review_view, name='teacher_review'),
 ]

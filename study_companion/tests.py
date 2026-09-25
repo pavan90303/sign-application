@@ -388,5 +388,122 @@ class LearnSignLanguageFeatureTests(TestCase):
         self.assertIsNotNone(attempt)
         self.assertEqual(attempt.expected_sign, 'Hello')
 
+    def test_concept_assessment_view(self):
+        """Test Concept Assessment main view loads for authenticated user"""
+        self.client.login(username='learnuser', password='password123')
+        response = self.client.get(reverse('concept_assessment'))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Concept Understanding Assessment")
+
+    def test_concept_assessment_save_reference_api(self):
+        """Test saving reference concept content extracts structured JSON schema"""
+        self.client.login(username='learnuser', password='password123')
+        resp = self.client.post(reverse('concept_assessment_save_reference'), {
+            'topic': 'Photosynthesis',
+            'reference_text': 'Photosynthesis is the process by which green plants use sunlight, water and carbon dioxide to produce glucose and release oxygen.'
+        })
+        self.assertEqual(resp.status_code, 200)
+        data = json.loads(resp.content)
+        self.assertEqual(data['status'], 'ok')
+        self.assertEqual(data['topic'], 'Photosynthesis')
+        self.assertIn('reference_concepts_json', data)
+        self.assertIn('concepts', data['reference_concepts_json'])
+        self.assertIn('relationships', data['reference_concepts_json'])
+
+    def test_concept_assessment_low_confidence_safety(self):
+        """Test low sign recognition confidence (<50%) flags safety warning without false score"""
+        self.client.login(username='learnuser', password='password123')
+        payload = {
+            'topic': 'Photosynthesis',
+            'reference_text': 'Photosynthesis is the process by which green plants use sunlight and water to make food.',
+            'reference_concepts_json': {
+                'topic': 'Photosynthesis',
+                'concepts': ['plants', 'sunlight', 'water', 'glucose'],
+                'relationships': [{'source': 'plants', 'relation': 'use', 'target': 'sunlight'}]
+            },
+            'explanation_source': 'live',
+            'frames': [{'landmarks': [{'x': 0.1, 'y': 0.2, 'z': 0.0}]}]
+        }
+        resp = self.client.post(reverse('concept_assessment_analyze'), json.dumps(payload), content_type='application/json')
+        self.assertEqual(resp.status_code, 200)
+        data = json.loads(resp.content)
+        self.assertEqual(data['status'], 'low_recognition_confidence')
+        self.assertFalse(data['is_reliable'])
+        self.assertLess(data['recognition_confidence'], 0.50)
+
+    def test_concept_assessment_pipeline_evaluation(self):
+        """Test complete concept assessment pipeline creates ConceptAssessment, ConceptResult, and AssessmentAttempt"""
+        from study_companion.models import ConceptAssessment, ConceptResult, AssessmentAttempt
+        self.client.login(username='learnuser', password='password123')
+        payload = {
+            'topic': 'Photosynthesis',
+            'reference_text': 'Photosynthesis is the process by which green plants use sunlight, water and carbon dioxide to produce glucose and release oxygen.',
+            'reference_concepts_json': {
+                'topic': 'Photosynthesis',
+                'concepts': ['plants', 'sunlight', 'water', 'carbon dioxide', 'glucose', 'oxygen'],
+                'relationships': [
+                    {'source': 'plants', 'relation': 'use', 'target': 'sunlight'},
+                    {'source': 'plants', 'relation': 'use', 'target': 'water'}
+                ]
+            },
+            'explanation_source': 'live',
+            'confirmed_explanation': 'Plants use sunlight and water to produce food and release oxygen.'
+        }
+        resp = self.client.post(reverse('concept_assessment_analyze'), json.dumps(payload), content_type='application/json')
+        self.assertEqual(resp.status_code, 200)
+        data = json.loads(resp.content)
+        self.assertEqual(data['status'], 'ok')
+        self.assertTrue(data['is_reliable'])
+        self.assertIn('overall_score', data)
+        self.assertIn('concept_coverage', data)
+        self.assertIn('category_summary', data)
+
+        # Check DB records
+        assessment = ConceptAssessment.objects.filter(user=self.user, topic='Photosynthesis').first()
+        self.assertIsNotNone(assessment)
+        self.assertEqual(assessment.topic, 'Photosynthesis')
+        
+        results = ConceptResult.objects.filter(assessment=assessment)
+        self.assertGreater(results.count(), 0)
+        
+        attempt = AssessmentAttempt.objects.filter(user=self.user, topic='Photosynthesis').first()
+        self.assertIsNotNone(attempt)
+        self.assertEqual(attempt.attempt_number, 1)
+
+    def test_teacher_review_view(self):
+        """Test teacher review view and score verification POST"""
+        from study_companion.models import ConceptAssessment, TeacherReview
+        self.client.login(username='learnuser', password='password123')
+        
+        assessment = ConceptAssessment.objects.create(
+            user=self.user,
+            topic='Photosynthesis',
+            reference_content='Plants use sunlight and water.',
+            reference_concepts_json={'concepts': ['plants', 'sunlight', 'water'], 'relationships': []},
+            reconstructed_explanation='Plants use sunlight.',
+            recognition_confidence=0.90,
+            concept_coverage=0.66,
+            relationship_accuracy=0.80,
+            overall_understanding_score=0.72
+        )
+        
+        url = reverse('teacher_review', args=[assessment.id])
+        resp_get = self.client.get(url)
+        self.assertEqual(resp_get.status_code, 200)
+        
+        resp_post = self.client.post(url, {
+            'corrected_reconstruction': 'Plants use sunlight and water to grow.',
+            'corrected_coverage': '90',
+            'corrected_relationship_accuracy': '85',
+            'teacher_notes': 'Good explanation with minor omissions.'
+        })
+        self.assertEqual(resp_post.status_code, 302)
+        
+        review = TeacherReview.objects.filter(assessment=assessment).first()
+        self.assertIsNotNone(review)
+        self.assertTrue(review.is_verified)
+        self.assertEqual(review.corrected_coverage, 0.90)
+
+
 
 
