@@ -10,21 +10,24 @@ from .models import Course, CourseSection, Lesson, LessonProgress, SectionProgre
 def get_verified_asset_info(asset_name):
     """
     Checks if asset exists in assets/ or assets/ISL_Gifs/.
-    Returns dict: {'exists': bool, 'filename': str, 'url': str}
+    Returns dict: {'exists': bool, 'filename': str, 'url': str, 'media_type': str}
     """
     if not asset_name:
-        return {'exists': False, 'filename': '', 'url': ''}
+        return {'exists': False, 'filename': '', 'url': '', 'media_type': 'video'}
     
     clean_name = asset_name.strip()
+    ext = os.path.splitext(clean_name)[1].lower()
+    media_type = 'video' if ext in ('.mp4', '.webm', '.ogg', '.mov') else ('gif' if ext == '.gif' else 'image')
+
     base_assets = os.path.join(settings.BASE_DIR, 'assets', clean_name)
     if os.path.exists(base_assets):
-        return {'exists': True, 'filename': clean_name, 'url': f"/static/{clean_name}"}
+        return {'exists': True, 'filename': clean_name, 'url': f"/static/{clean_name}", 'media_type': media_type}
     
     gif_assets = os.path.join(settings.BASE_DIR, 'assets', 'ISL_Gifs', clean_name)
     if os.path.exists(gif_assets):
-        return {'exists': True, 'filename': clean_name, 'url': f"/static/ISL_Gifs/{clean_name}"}
+        return {'exists': True, 'filename': clean_name, 'url': f"/static/ISL_Gifs/{clean_name}", 'media_type': media_type}
 
-    return {'exists': False, 'filename': clean_name, 'url': f"/static/{clean_name}"}
+    return {'exists': False, 'filename': clean_name, 'url': f"/static/{clean_name}", 'media_type': media_type}
 
 
 def normalize_answer(text):
@@ -230,15 +233,12 @@ def get_user_course_progress(user):
 
     section_data = []
     completed_sections_count = 0
-    next_lesson = None
+    active_section = None
     previous_section_passed = True  # Section 1 is always initially unlocked
 
     for idx, sec in enumerate(sections, start=1):
         sec_lessons = list(sec.lessons.all().order_by('order'))
         sec_total = len(sec_lessons)
-        sec_completed_lessons = [l for l in sec_lessons if l.id in completed_lesson_ids]
-        sec_completed_count = len(sec_completed_lessons)
-        lessons_all_done = (sec_completed_count == sec_total) and (sec_total > 0)
 
         sec_prog, _ = SectionProgress.objects.get_or_create(
             user=user,
@@ -256,18 +256,19 @@ def get_user_course_progress(user):
             sec_prog.save(update_fields=['unlocked'])
 
         is_quiz_passed = sec_prog.quiz_completed
-        is_section_fully_completed = lessons_all_done and is_quiz_passed
+        # Section progression operates at section level: passing quiz marks section fully completed
+        is_section_fully_completed = is_quiz_passed
 
         if is_section_fully_completed:
             completed_sections_count += 1
+            sec_percentage = 100
+        elif is_unlocked:
+            sec_percentage = 50 if sec_prog.best_score > 0 else 25
+        else:
+            sec_percentage = 0
 
-        sec_percentage = int((sec_completed_count / sec_total) * 100) if sec_total > 0 else 0
-
-        if is_unlocked and next_lesson is None:
-            for l in sec_lessons:
-                if l.id not in completed_lesson_ids:
-                    next_lesson = l
-                    break
+        if is_unlocked and active_section is None and not is_quiz_passed:
+            active_section = sec
 
         section_data.append({
             "section": sec,
@@ -276,11 +277,11 @@ def get_user_course_progress(user):
             "level": sec.level,
             "description": sec.description,
             "total_lessons": sec_total,
-            "completed_lessons": sec_completed_count,
+            "completed_lessons": sec_total if is_section_fully_completed else (1 if is_unlocked else 0),
             "percentage": sec_percentage,
             "completion_percent": sec_percentage,
             "is_unlocked": is_unlocked,
-            "lessons_all_done": lessons_all_done,
+            "lessons_all_done": True,
             "is_quiz_passed": is_quiz_passed,
             "quiz_passed": is_quiz_passed,
             "is_completed": is_section_fully_completed,
@@ -293,22 +294,26 @@ def get_user_course_progress(user):
 
         previous_section_passed = is_section_fully_completed
 
-    if next_lesson is None and sections and sections[0].lessons.exists():
-        next_lesson = sections[0].lessons.first()
+    if active_section is None and sections:
+        active_section = sections[0]
+
+    total_sections = len(sections)
+    overall_percentage = int((completed_sections_count / total_sections) * 100) if total_sections > 0 else 0
 
     return {
         "course": course,
         "overall_percentage": overall_percentage,
         "progress_percent": overall_percentage,
         "total_lessons": total_lessons,
-        "total_completed": total_completed,
-        "completed_lessons": total_completed,
+        "total_completed": completed_sections_count,
+        "completed_lessons": completed_sections_count,
         "completed_sections_count": completed_sections_count,
         "completed_sections": completed_sections_count,
-        "total_sections": len(sections),
+        "total_sections": total_sections,
         "sections": section_data,
         "section_progress_list": section_data,
-        "next_lesson": next_lesson,
+        "active_section": active_section,
+        "next_lesson": sections[0].lessons.first() if sections and sections[0].lessons.exists() else None,
     }
 
 
@@ -379,7 +384,7 @@ def validate_question(q, section):
 
     q_type = q.get('type')
 
-    if q_type in ('sign_to_meaning', 'complete_sentence', 'sequence_to_meaning', 'dialogue', 'context_meaning'):
+    if q_type in ('sign_to_meaning', 'complete_sentence', 'sequence_to_meaning', 'dialogue', 'context_meaning', 'sentence_to_sequence'):
         options = q.get('options', [])
         if len(options) != 4:
             return False
@@ -395,10 +400,16 @@ def validate_question(q, section):
         options = q.get('options', [])
         if len(options) != 4:
             return False
-        # Ensure all option sign videos exist and are unique
-        urls = [opt.get('video_url') for opt in options]
-        if len(set(urls)) != 4:
+        # Ensure all option sign media exist on disk and are unique
+        urls = [opt.get('media_url') or opt.get('video_url') for opt in options if isinstance(opt, dict)]
+        if len(urls) != 4 or len(set(urls)) != 4:
             return False
+        for opt in options:
+            url = opt.get('media_url') or opt.get('video_url') or ''
+            clean_name = url.replace('/static/ISL_Gifs/', '').replace('/static/', '').strip()
+            v_check = get_verified_asset_info(clean_name)
+            if not v_check['exists']:
+                return False
         correct_index = q.get('correct_index')
         if correct_index is None or correct_index not in (0, 1, 2, 3):
             return False
@@ -419,6 +430,56 @@ def validate_question(q, section):
             return False
 
     return True
+
+
+def sanitize_quiz_for_client(server_questions):
+    """
+    Removes correct answer keys before sending questions to the browser.
+    Ensures the client cannot inspect or cheat answers.
+    Normalizes options so meaning_to_sign contains clean media descriptors
+    without leaking sign_name.
+    """
+    client_questions = []
+    for idx, q in enumerate(server_questions):
+        client_options = []
+        for o_idx, opt in enumerate(q.get('options', [])):
+            if isinstance(opt, dict):
+                # meaning_to_sign or visual media options
+                m_url = str(opt.get('media_url') or opt.get('video_url') or '')
+                ext = os.path.splitext(m_url)[1].lower()
+                m_type = opt.get('media_type') or ('video' if ext in ('.mp4', '.webm', '.ogg', '.mov') else ('gif' if ext == '.gif' else 'image'))
+                client_options.append({
+                    'id': opt.get('id', o_idx),
+                    'index': o_idx,
+                    'value': opt.get('value', o_idx),
+                    'label': opt.get('label', f"Option {chr(65+o_idx)}"),
+                    'letter': opt.get('letter', chr(65+o_idx)),
+                    'media_type': m_type,
+                    'media_url': m_url,
+                    'video_url': m_url,
+                })
+            else:
+                client_options.append(str(opt))
+
+        client_q = {
+            'question_index': idx,
+            'id': str(q['id']),
+            'type': str(q['type']),
+            'section_id': int(q['section_id']),
+            'section_number': int(q['section_number']),
+            'section_title': str(q['section_title']),
+            'prompt': str(q['prompt']),
+            'target_word': str(q.get('target_word', '')),
+            'media': q.get('media', {}),
+            'options': client_options,
+            'matching_data': q.get('matching_data', {}),
+            'stage': q.get('stage', 1),
+            'stage_name': q.get('stage_name', 'Stage 1: Warm Up'),
+            'stage_desc': q.get('stage_desc', ''),
+            'timer': q.get('timer', 15),
+        }
+        client_questions.append(client_q)
+    return client_questions
 
 
 def generate_section_quiz(section_id, user=None):
@@ -443,7 +504,8 @@ def generate_section_quiz(section_id, user=None):
     unique_asset_map = {}
     for l in video_lessons:
         first_a = l.sign_asset.split(',')[0].strip()
-        if first_a and first_a not in unique_asset_map:
+        v_check = get_verified_asset_info(first_a)
+        if first_a and v_check['exists'] and first_a not in unique_asset_map:
             unique_asset_map[first_a] = l
     distinct_video_lessons = list(unique_asset_map.values())
 
@@ -456,14 +518,13 @@ def generate_section_quiz(section_id, user=None):
             unique_candidates = list(dict.fromkeys(unique_candidates + fallback))
         return random.sample(unique_candidates, min(count, len(unique_candidates)))
 
-    # SECTION 1: Alphabets & Letters (A-Z)
+    # SECTION 1: Alphabets & Letters (A-Z) - 26 letters with video
     if sec_num == 1:
-        # Shuffled pool of 26 letters
         available = list(video_lessons)
         random.shuffle(available)
 
-        # 1-3. 3x Sign -> Letter (sign_to_meaning)
-        for _ in range(3):
+        # 10x Sign -> Letter (sign_to_meaning)
+        for _ in range(10):
             if not available:
                 available = list(video_lessons)
                 random.shuffle(available)
@@ -471,8 +532,9 @@ def generate_section_quiz(section_id, user=None):
             distractors = pick_distractors(target, video_lessons, count=3)
             options = [target.word_or_phrase] + distractors
             random.shuffle(options)
-
             first_asset = target.sign_asset.split(',')[0].strip()
+            v_first = get_verified_asset_info(first_asset)
+
             q = {
                 'id': f"sec1_s2m_{uuid.uuid4().hex[:6]}",
                 'type': 'sign_to_meaning',
@@ -481,23 +543,26 @@ def generate_section_quiz(section_id, user=None):
                 'section_title': section.title,
                 'lesson_id': target.id,
                 'prompt': "What letter does this sign represent?",
-                'media': {'video_url': f"/static/{first_asset}", 'has_video': True, 'title': target.title},
+                'media': {'video_url': v_first['url'], 'has_video': True, 'title': target.title, 'media_type': v_first['media_type']},
                 'options': options,
                 'correct_answer': target.word_or_phrase,
                 'correct_index': options.index(target.word_or_phrase),
-                'correct_sign_url': f"/static/{first_asset}",
+                'correct_sign_url': v_first['url'],
                 'explanation': target.explanation or f"The hand posture shown represents the letter '{target.word_or_phrase}' in Indian Sign Language."
             }
             if validate_question(q, section):
                 questions.append(q)
 
-        # 4-6. 3x Letter -> Sign (meaning_to_sign)
-        for _ in range(3):
+        # 5x Letter -> Sign (meaning_to_sign)
+        for _ in range(5):
             if not available:
                 available = list(video_lessons)
                 random.shuffle(available)
             target = available.pop()
-            distractor_lessons = random.sample([l for l in video_lessons if l.id != target.id], 3)
+            eligible_distractors = [l for l in distinct_video_lessons if l.sign_asset != target.sign_asset]
+            if len(eligible_distractors) < 3:
+                continue
+            distractor_lessons = random.sample(eligible_distractors, 3)
             choices = [target] + distractor_lessons
             random.shuffle(choices)
 
@@ -505,16 +570,23 @@ def generate_section_quiz(section_id, user=None):
             correct_idx = 0
             for idx, c in enumerate(choices):
                 asset_f = c.sign_asset.split(',')[0].strip()
+                v_info = get_verified_asset_info(asset_f)
                 options.append({
                     'id': idx,
+                    'index': idx,
+                    'value': idx,
                     'label': f"Option {chr(65+idx)}",
-                    'video_url': f"/static/{asset_f}",
+                    'letter': chr(65+idx),
+                    'media_type': v_info['media_type'],
+                    'media_url': v_info['url'],
+                    'video_url': v_info['url'],
                     'sign_name': c.word_or_phrase
                 })
                 if c.id == target.id:
                     correct_idx = idx
 
             target_asset = target.sign_asset.split(',')[0].strip()
+            v_target = get_verified_asset_info(target_asset)
             q = {
                 'id': f"sec1_m2s_{uuid.uuid4().hex[:6]}",
                 'type': 'meaning_to_sign',
@@ -528,76 +600,8 @@ def generate_section_quiz(section_id, user=None):
                 'options': options,
                 'correct_answer': target_asset,
                 'correct_index': correct_idx,
-                'correct_sign_url': f"/static/{target_asset}",
+                'correct_sign_url': v_target['url'],
                 'explanation': target.explanation or f"Observe the finger posture for Letter '{target.word_or_phrase}'."
-            }
-            if validate_question(q, section):
-                questions.append(q)
-
-        # 7-8. 2x Type Letter (type_answer)
-        for _ in range(2):
-            if not available:
-                available = list(video_lessons)
-                random.shuffle(available)
-            target = available.pop()
-            first_asset = target.sign_asset.split(',')[0].strip()
-
-            q = {
-                'id': f"sec1_type_{uuid.uuid4().hex[:6]}",
-                'type': 'type_answer',
-                'section_id': section.id,
-                'section_number': 1,
-                'section_title': section.title,
-                'lesson_id': target.id,
-                'prompt': "Type the letter you see in this sign:",
-                'media': {'video_url': f"/static/{first_asset}", 'has_video': True, 'title': target.title},
-                'options': [],
-                'correct_answer': target.word_or_phrase,
-                'acceptable_answers': target.get_acceptable_answers() or [target.word_or_phrase.lower()],
-                'correct_sign_url': f"/static/{first_asset}",
-                'explanation': f"The sign displayed represents the letter '{target.word_or_phrase}'."
-            }
-            if validate_question(q, section):
-                questions.append(q)
-
-        # 9-10. 2x Matching (matching)
-        for _ in range(2):
-            pair_lessons = random.sample(video_lessons, 4)
-            shuffled_signs = list(pair_lessons)
-            random.shuffle(shuffled_signs)
-
-            pairs = []
-            correct_pairs = {}
-            for l in pair_lessons:
-                asset_f = l.sign_asset.split(',')[0].strip()
-                pairs.append({
-                    'id': l.id,
-                    'word': l.word_or_phrase,
-                    'video_url': f"/static/{asset_f}"
-                })
-                correct_pairs[l.word_or_phrase] = str(l.id)
-
-            matching_data = {
-                'words': [p['word'] for p in pairs],
-                'signs': [{'id': s.id, 'video_url': f"/static/{s.sign_asset.split(',')[0].strip()}"} for s in shuffled_signs]
-            }
-            random.shuffle(matching_data['words'])
-
-            q = {
-                'id': f"sec1_match_{uuid.uuid4().hex[:6]}",
-                'type': 'matching',
-                'section_id': section.id,
-                'section_number': 1,
-                'section_title': section.title,
-                'prompt': "Match each letter with its corresponding sign:",
-                'media': {'has_video': False},
-                'options': [],
-                'pairs': pairs,
-                'matching_data': matching_data,
-                'correct_pairs': correct_pairs,
-                'correct_answer': "All 4 letter pairs matched",
-                'correct_sign_url': "",
-                'explanation': "Well done! Fingerspelling requires recognizing letter hand postures instantly."
             }
             if validate_question(q, section):
                 questions.append(q)
@@ -607,8 +611,8 @@ def generate_section_quiz(section_id, user=None):
         available_vids = list(video_lessons)
         random.shuffle(available_vids)
 
-        # 1-3. 3x Sign -> Meaning
-        for _ in range(3):
+        # 8x Sign -> Meaning
+        for _ in range(8):
             if not available_vids:
                 available_vids = list(video_lessons)
                 random.shuffle(available_vids)
@@ -617,6 +621,7 @@ def generate_section_quiz(section_id, user=None):
             options = [target.word_or_phrase] + distractors
             random.shuffle(options)
             first_asset = target.sign_asset.split(',')[0].strip()
+            v_first = get_verified_asset_info(first_asset)
 
             q = {
                 'id': f"sec2_s2m_{uuid.uuid4().hex[:6]}",
@@ -626,24 +631,26 @@ def generate_section_quiz(section_id, user=None):
                 'section_title': section.title,
                 'lesson_id': target.id,
                 'prompt': "What does this everyday sign mean?",
-                'media': {'video_url': f"/static/{first_asset}", 'has_video': True, 'title': target.title},
+                'media': {'video_url': v_first['url'], 'has_video': True, 'title': target.title, 'media_type': v_first['media_type']},
                 'options': options,
                 'correct_answer': target.word_or_phrase,
                 'correct_index': options.index(target.word_or_phrase),
-                'correct_sign_url': f"/static/{first_asset}",
+                'correct_sign_url': v_first['url'],
                 'explanation': target.explanation or f"This gesture signifies '{target.word_or_phrase}'."
             }
             if validate_question(q, section):
                 questions.append(q)
 
-        # 4-6. 3x Meaning -> Sign
-        for _ in range(3):
+        # 4x Meaning -> Sign
+        for _ in range(4):
             if not available_vids:
                 available_vids = list(video_lessons)
                 random.shuffle(available_vids)
             target = available_vids.pop()
             eligible_distractors = [l for l in distinct_video_lessons if l.sign_asset != target.sign_asset]
-            distractor_lessons = random.sample(eligible_distractors, min(3, len(eligible_distractors)))
+            if len(eligible_distractors) < 3:
+                continue
+            distractor_lessons = random.sample(eligible_distractors, 3)
             choices = [target] + distractor_lessons
             random.shuffle(choices)
 
@@ -651,16 +658,23 @@ def generate_section_quiz(section_id, user=None):
             correct_idx = 0
             for idx, c in enumerate(choices):
                 asset_f = c.sign_asset.split(',')[0].strip()
+                v_info = get_verified_asset_info(asset_f)
                 options.append({
                     'id': idx,
+                    'index': idx,
+                    'value': idx,
                     'label': f"Option {chr(65+idx)}",
-                    'video_url': f"/static/{asset_f}",
+                    'letter': chr(65+idx),
+                    'media_type': v_info['media_type'],
+                    'media_url': v_info['url'],
+                    'video_url': v_info['url'],
                     'sign_name': c.word_or_phrase
                 })
                 if c.id == target.id:
                     correct_idx = idx
 
             target_asset = target.sign_asset.split(',')[0].strip()
+            v_target = get_verified_asset_info(target_asset)
             q = {
                 'id': f"sec2_m2s_{uuid.uuid4().hex[:6]}",
                 'type': 'meaning_to_sign',
@@ -674,108 +688,46 @@ def generate_section_quiz(section_id, user=None):
                 'options': options,
                 'correct_answer': target_asset,
                 'correct_index': correct_idx,
-                'correct_sign_url': f"/static/{target_asset}",
-                'explanation': target.explanation
+                'correct_sign_url': v_target['url'],
+                'explanation': target.explanation or f"This sign represents '{target.word_or_phrase}'."
             }
             if validate_question(q, section):
                 questions.append(q)
 
-        # 7-8. 2x Type Answer
-        for _ in range(2):
-            if not available_vids:
-                available_vids = list(video_lessons)
-                random.shuffle(available_vids)
-            target = available_vids.pop()
-            first_asset = target.sign_asset.split(',')[0].strip()
+        # 3x Context Meaning
+        polite_targets = [l for l in all_lessons if l.word_or_phrase in ("Thank You", "Please", "Sorry", "Help", "Good", "Bad", "Home", "Friend")]
+        chosen_polite = random.sample(polite_targets, min(3, len(polite_targets)))
+        for t_polite in chosen_polite:
+            distractors = pick_distractors(t_polite, all_lessons, count=3)
+            options = [t_polite.word_or_phrase] + distractors
+            random.shuffle(options)
+            first_asset = t_polite.sign_asset.split(',')[0].strip() if t_polite.sign_asset else ""
 
             q = {
-                'id': f"sec2_type_{uuid.uuid4().hex[:6]}",
-                'type': 'type_answer',
+                'id': f"sec2_ctx_{uuid.uuid4().hex[:6]}",
+                'type': 'sign_to_meaning',
                 'section_id': section.id,
                 'section_number': 2,
                 'section_title': section.title,
-                'lesson_id': target.id,
-                'prompt': "Type what this sign means:",
-                'media': {'video_url': f"/static/{first_asset}", 'has_video': True, 'title': target.title},
-                'options': [],
-                'correct_answer': target.word_or_phrase,
-                'acceptable_answers': target.get_acceptable_answers() or [target.word_or_phrase.lower()],
-                'correct_sign_url': f"/static/{first_asset}",
-                'explanation': target.explanation
+                'lesson_id': t_polite.id,
+                'prompt': f"Which Section 2 everyday word means: '{t_polite.explanation}'?",
+                'media': {'video_url': f"/static/{first_asset}" if first_asset else "", 'has_video': bool(first_asset)},
+                'options': options,
+                'correct_answer': t_polite.word_or_phrase,
+                'correct_index': options.index(t_polite.word_or_phrase),
+                'correct_sign_url': f"/static/{first_asset}" if first_asset else "",
+                'explanation': t_polite.explanation
             }
             if validate_question(q, section):
                 questions.append(q)
-
-        # 9. 1x Word <-> Sign Matching
-        match_lessons = random.sample(distinct_video_lessons, 4)
-        shuffled_signs = list(match_lessons)
-        random.shuffle(shuffled_signs)
-
-        pairs = []
-        correct_pairs = {}
-        for l in match_lessons:
-            asset_f = l.sign_asset.split(',')[0].strip()
-            pairs.append({'id': l.id, 'word': l.word_or_phrase, 'video_url': f"/static/{asset_f}"})
-            correct_pairs[l.word_or_phrase] = str(l.id)
-
-        matching_data = {
-            'words': [p['word'] for p in pairs],
-            'signs': [{'id': s.id, 'video_url': f"/static/{s.sign_asset.split(',')[0].strip()}"} for s in shuffled_signs]
-        }
-        random.shuffle(matching_data['words'])
-
-        q = {
-            'id': f"sec2_match_{uuid.uuid4().hex[:6]}",
-            'type': 'matching',
-            'section_id': section.id,
-            'section_number': 2,
-            'section_title': section.title,
-            'prompt': "Match each word with its corresponding sign:",
-            'media': {'has_video': False},
-            'options': [],
-            'pairs': pairs,
-            'matching_data': matching_data,
-            'correct_pairs': correct_pairs,
-            'correct_answer': "All 4 word pairs matched",
-            'correct_sign_url': "",
-            'explanation': "Everyday vocabulary retention strengthens your practical conversational foundation."
-        }
-        if validate_question(q, section):
-            questions.append(q)
-
-        # 10. 1x Context Meaning (from Section 2 lessons)
-        polite_targets = [l for l in all_lessons if l.word_or_phrase in ("Thank You", "Please", "Sorry", "Help")]
-        t_polite = random.choice(polite_targets) if polite_targets else all_lessons[0]
-        distractors = pick_distractors(t_polite, all_lessons, count=3)
-        options = [t_polite.word_or_phrase] + distractors
-        random.shuffle(options)
-        first_asset = t_polite.sign_asset.split(',')[0].strip() if t_polite.sign_asset else ""
-
-        q = {
-            'id': f"sec2_ctx_{uuid.uuid4().hex[:6]}",
-            'type': 'sign_to_meaning',
-            'section_id': section.id,
-            'section_number': 2,
-            'section_title': section.title,
-            'lesson_id': t_polite.id,
-            'prompt': f"Which polite expression is defined by: '{t_polite.explanation}'?",
-            'media': {'video_url': f"/static/{first_asset}" if first_asset else "", 'has_video': bool(first_asset)},
-            'options': options,
-            'correct_answer': t_polite.word_or_phrase,
-            'correct_index': options.index(t_polite.word_or_phrase),
-            'correct_sign_url': f"/static/{first_asset}" if first_asset else "",
-            'explanation': t_polite.explanation
-        }
-        if validate_question(q, section):
-            questions.append(q)
 
     # SECTION 3: Intermediate Words
     elif sec_num == 3:
         available_vids = list(video_lessons)
         random.shuffle(available_vids)
 
-        # 1-3. 3x Sign -> Meaning
-        for _ in range(3):
+        # 5x Sign -> Meaning
+        for _ in range(5):
             if not available_vids:
                 available_vids = list(video_lessons)
                 random.shuffle(available_vids)
@@ -784,6 +736,7 @@ def generate_section_quiz(section_id, user=None):
             options = [target.word_or_phrase] + distractors
             random.shuffle(options)
             first_asset = target.sign_asset.split(',')[0].strip()
+            v_first = get_verified_asset_info(first_asset)
 
             q = {
                 'id': f"sec3_s2m_{uuid.uuid4().hex[:6]}",
@@ -792,25 +745,27 @@ def generate_section_quiz(section_id, user=None):
                 'section_number': 3,
                 'section_title': section.title,
                 'lesson_id': target.id,
-                'prompt': "What intermediate word does this sign represent?",
-                'media': {'video_url': f"/static/{first_asset}", 'has_video': True, 'title': target.title},
+                'prompt': "What does this intermediate sign mean?",
+                'media': {'video_url': v_first['url'], 'has_video': True, 'title': target.title, 'media_type': v_first['media_type']},
                 'options': options,
                 'correct_answer': target.word_or_phrase,
                 'correct_index': options.index(target.word_or_phrase),
-                'correct_sign_url': f"/static/{first_asset}",
+                'correct_sign_url': v_first['url'],
                 'explanation': target.explanation
             }
             if validate_question(q, section):
                 questions.append(q)
 
-        # 4-6. 3x Meaning -> Sign
-        for _ in range(3):
+        # 4x Meaning -> Sign
+        for _ in range(4):
             if not available_vids:
                 available_vids = list(video_lessons)
                 random.shuffle(available_vids)
             target = available_vids.pop()
             eligible_distractors = [l for l in distinct_video_lessons if l.sign_asset != target.sign_asset]
-            distractor_lessons = random.sample(eligible_distractors, min(3, len(eligible_distractors)))
+            if len(eligible_distractors) < 3:
+                continue
+            distractor_lessons = random.sample(eligible_distractors, 3)
             choices = [target] + distractor_lessons
             random.shuffle(choices)
 
@@ -818,16 +773,23 @@ def generate_section_quiz(section_id, user=None):
             correct_idx = 0
             for idx, c in enumerate(choices):
                 asset_f = c.sign_asset.split(',')[0].strip()
+                v_info = get_verified_asset_info(asset_f)
                 options.append({
                     'id': idx,
+                    'index': idx,
+                    'value': idx,
                     'label': f"Option {chr(65+idx)}",
-                    'video_url': f"/static/{asset_f}",
+                    'letter': chr(65+idx),
+                    'media_type': v_info['media_type'],
+                    'media_url': v_info['url'],
+                    'video_url': v_info['url'],
                     'sign_name': c.word_or_phrase
                 })
                 if c.id == target.id:
                     correct_idx = idx
 
             target_asset = target.sign_asset.split(',')[0].strip()
+            v_target = get_verified_asset_info(target_asset)
             q = {
                 'id': f"sec3_m2s_{uuid.uuid4().hex[:6]}",
                 'type': 'meaning_to_sign',
@@ -841,108 +803,75 @@ def generate_section_quiz(section_id, user=None):
                 'options': options,
                 'correct_answer': target_asset,
                 'correct_index': correct_idx,
-                'correct_sign_url': f"/static/{target_asset}",
-                'explanation': target.explanation
+                'correct_sign_url': v_target['url'],
+                'explanation': target.explanation or f"This sign represents '{target.word_or_phrase}'."
             }
             if validate_question(q, section):
                 questions.append(q)
 
-        # 7-8. 2x Type Answer
-        for _ in range(2):
+        # 3x Context Meaning
+        ctx_pool = [l for l in all_lessons if l.word_or_phrase in ("Hospital", "Doctor", "Emergency", "Work", "College", "Safe", "Medicine", "Pain")]
+        chosen_ctx = random.sample(ctx_pool, min(3, len(ctx_pool)))
+        for target_ctx in chosen_ctx:
+            distractors = pick_distractors(target_ctx, all_lessons, count=3)
+            options = [target_ctx.word_or_phrase] + distractors
+            random.shuffle(options)
+            first_asset = target_ctx.sign_asset.split(',')[0].strip() if target_ctx.sign_asset else ""
+
+            q = {
+                'id': f"sec3_ctx_{uuid.uuid4().hex[:6]}",
+                'type': 'sign_to_meaning',
+                'section_id': section.id,
+                'section_number': 3,
+                'section_title': section.title,
+                'lesson_id': target_ctx.id,
+                'prompt': f"Which Section 3 term describes: '{target_ctx.explanation}'?",
+                'media': {'video_url': f"/static/{first_asset}" if first_asset else "", 'has_video': bool(first_asset)},
+                'options': options,
+                'correct_answer': target_ctx.word_or_phrase,
+                'correct_index': options.index(target_ctx.word_or_phrase),
+                'correct_sign_url': f"/static/{first_asset}" if first_asset else "",
+                'explanation': target_ctx.explanation
+            }
+            if validate_question(q, section):
+                questions.append(q)
+
+        # 4x Additional Sign -> Meaning
+        for _ in range(4):
             if not available_vids:
                 available_vids = list(video_lessons)
                 random.shuffle(available_vids)
             target = available_vids.pop()
+            distractors = pick_distractors(target, all_lessons, count=3)
+            options = [target.word_or_phrase] + distractors
+            random.shuffle(options)
             first_asset = target.sign_asset.split(',')[0].strip()
 
             q = {
-                'id': f"sec3_type_{uuid.uuid4().hex[:6]}",
-                'type': 'type_answer',
+                'id': f"sec3_s2m_extra_{uuid.uuid4().hex[:6]}",
+                'type': 'sign_to_meaning',
                 'section_id': section.id,
                 'section_number': 3,
                 'section_title': section.title,
                 'lesson_id': target.id,
-                'prompt': "Type the word corresponding to this sign:",
+                'prompt': "What does this intermediate sign mean?",
                 'media': {'video_url': f"/static/{first_asset}", 'has_video': True, 'title': target.title},
-                'options': [],
+                'options': options,
                 'correct_answer': target.word_or_phrase,
-                'acceptable_answers': target.get_acceptable_answers() or [target.word_or_phrase.lower()],
+                'correct_index': options.index(target.word_or_phrase),
                 'correct_sign_url': f"/static/{first_asset}",
                 'explanation': target.explanation
             }
             if validate_question(q, section):
                 questions.append(q)
 
-        # 9. 1x Matching
-        match_lessons = random.sample(distinct_video_lessons, 4)
-        shuffled_signs = list(match_lessons)
-        random.shuffle(shuffled_signs)
-
-        pairs = []
-        correct_pairs = {}
-        for l in match_lessons:
-            asset_f = l.sign_asset.split(',')[0].strip()
-            pairs.append({'id': l.id, 'word': l.word_or_phrase, 'video_url': f"/static/{asset_f}"})
-            correct_pairs[l.word_or_phrase] = str(l.id)
-
-        matching_data = {
-            'words': [p['word'] for p in pairs],
-            'signs': [{'id': s.id, 'video_url': f"/static/{s.sign_asset.split(',')[0].strip()}"} for s in shuffled_signs]
-        }
-        random.shuffle(matching_data['words'])
-
-        q = {
-            'id': f"sec3_match_{uuid.uuid4().hex[:6]}",
-            'type': 'matching',
-            'section_id': section.id,
-            'section_number': 3,
-            'section_title': section.title,
-            'prompt': "Match each intermediate word with its sign:",
-            'media': {'has_video': False},
-            'options': [],
-            'pairs': pairs,
-            'matching_data': matching_data,
-            'correct_pairs': correct_pairs,
-            'correct_answer': "All 4 word pairs matched",
-            'correct_sign_url': "",
-            'explanation': "Intermediate vocabulary gives you the tools for workplace and community interactions."
-        }
-        if validate_question(q, section):
-            questions.append(q)
-
-        # 10. 1x Context Meaning
-        ctx_pool = [l for l in all_lessons if l.word_or_phrase in ("Hospital", "Doctor", "Emergency", "Work", "College", "Safe")]
-        target_ctx = random.choice(ctx_pool) if ctx_pool else all_lessons[0]
-        distractors = pick_distractors(target_ctx, all_lessons, count=3)
-        options = [target_ctx.word_or_phrase] + distractors
-        random.shuffle(options)
-        first_asset = target_ctx.sign_asset.split(',')[0].strip() if target_ctx.sign_asset else ""
-
-        q = {
-            'id': f"sec3_ctx_{uuid.uuid4().hex[:6]}",
-            'type': 'sign_to_meaning',
-            'section_id': section.id,
-            'section_number': 3,
-            'section_title': section.title,
-            'lesson_id': target_ctx.id,
-            'prompt': f"Which Section 3 term describes: '{target_ctx.explanation}'?",
-            'media': {'video_url': f"/static/{first_asset}" if first_asset else "", 'has_video': bool(first_asset)},
-            'options': options,
-            'correct_answer': target_ctx.word_or_phrase,
-            'correct_index': options.index(target_ctx.word_or_phrase),
-            'correct_sign_url': f"/static/{first_asset}" if first_asset else "",
-            'explanation': target_ctx.explanation
-        }
-        if validate_question(q, section):
-            questions.append(q)
-
-    # SECTION 4: Short Sentences
+    # SECTION 4: Short Sentences (10 lessons, all with sign videos)
     elif sec_num == 4:
         available_sentences = list(all_lessons)
         random.shuffle(available_sentences)
 
-        # 1-3. 3x Sign Sequence -> Meaning
-        for _ in range(3):
+        # 4x Sequence -> Meaning
+        for _ in range(4):
             if not available_sentences:
                 available_sentences = list(all_lessons)
                 random.shuffle(available_sentences)
@@ -975,7 +904,7 @@ def generate_section_quiz(section_id, user=None):
             if validate_question(q, section):
                 questions.append(q)
 
-        # 4-5. 2x Complete the Sentence
+        # 3x Complete the Sentence
         sentence_fillers = [
             ("I need help.", "I need ______.", "help", ["student", "name", "where"]),
             ("I am a student.", "I am a ______.", "student", ["help", "name", "sign language"]),
@@ -983,7 +912,7 @@ def generate_section_quiz(section_id, user=None):
             ("Where are you going?", "Where are you ______?", "going", ["name", "student", "help"]),
             ("Please help me.", "Please ______ me.", "help", ["name", "student", "understand"])
         ]
-        chosen_fills = random.sample(sentence_fillers, 2)
+        chosen_fills = random.sample(sentence_fillers, 3)
         for full_s, blank_s, ans_word, dist_words in chosen_fills:
             options = [ans_word] + dist_words
             random.shuffle(options)
@@ -1008,8 +937,8 @@ def generate_section_quiz(section_id, user=None):
             if validate_question(q, section):
                 questions.append(q)
 
-        # 6-7. 2x Sentence -> Sign Sequence Choice
-        for _ in range(2):
+        # 3x Sentence -> Sequence Choice
+        for _ in range(3):
             if not available_sentences:
                 available_sentences = list(all_lessons)
                 random.shuffle(available_sentences)
@@ -1021,7 +950,6 @@ def generate_section_quiz(section_id, user=None):
             options = []
             correct_idx = 0
             for idx, c in enumerate(choices):
-                first_f = c.sign_asset.split(',')[0].strip()
                 seq_repr = " → ".join([s.strip().replace('.mp4', '') for s in c.sign_asset.split(',') if s.strip()])
                 options.append(f"{seq_repr} ({c.title})")
                 if c.id == target.id:
@@ -1030,7 +958,7 @@ def generate_section_quiz(section_id, user=None):
             first_asset = target.sign_asset.split(',')[0].strip()
             q = {
                 'id': f"sec4_s2seq_{uuid.uuid4().hex[:6]}",
-                'type': 'sentence_to_sequence',
+                'type': 'sign_to_meaning',
                 'section_id': section.id,
                 'section_number': 4,
                 'section_title': section.title,
@@ -1046,98 +974,81 @@ def generate_section_quiz(section_id, user=None):
             if validate_question(q, section):
                 questions.append(q)
 
-        # 8. 1x Type Answer
-        t_lesson = random.choice(all_lessons)
-        first_asset = t_lesson.sign_asset.split(',')[0].strip()
-        q = {
-            'id': f"sec4_type_{uuid.uuid4().hex[:6]}",
-            'type': 'type_answer',
-            'section_id': section.id,
-            'section_number': 4,
-            'section_title': section.title,
-            'lesson_id': t_lesson.id,
-            'prompt': "Type the sentence represented by this sign:",
-            'media': {'video_url': f"/static/{first_asset}", 'has_video': True, 'title': t_lesson.title},
-            'options': [],
-            'correct_answer': t_lesson.word_or_phrase,
-            'acceptable_answers': t_lesson.get_acceptable_answers() or [t_lesson.word_or_phrase.lower()],
-            'correct_sign_url': f"/static/{first_asset}",
-            'explanation': t_lesson.explanation
-        }
-        if validate_question(q, section):
-            questions.append(q)
+        # 2x Additional Sequence -> Meaning
+        for _ in range(2):
+            if not available_sentences:
+                available_sentences = list(all_lessons)
+                random.shuffle(available_sentences)
+            target = available_sentences.pop()
+            distractors = pick_distractors(target, all_lessons, count=3)
+            options = [target.word_or_phrase] + distractors
+            random.shuffle(options)
 
-        # 9. 1x Key Sign Recognition
-        t_key = random.choice([l for l in all_lessons if 'where' in l.word_or_phrase.lower() or 'what' in l.word_or_phrase.lower() or 'help' in l.word_or_phrase.lower()])
-        distractors = pick_distractors(t_key, all_lessons, count=3)
-        options = [t_key.word_or_phrase] + distractors
-        random.shuffle(options)
-        first_asset = t_key.sign_asset.split(',')[0].strip()
-        q = {
-            'id': f"sec4_key_{uuid.uuid4().hex[:6]}",
-            'type': 'sign_to_meaning',
-            'section_id': section.id,
-            'section_number': 4,
-            'section_title': section.title,
-            'lesson_id': t_key.id,
-            'prompt': f"Which statement corresponds to the movement in '{t_key.title}'?",
-            'media': {'video_url': f"/static/{first_asset}", 'has_video': True, 'title': t_key.title},
-            'options': options,
-            'correct_answer': t_key.word_or_phrase,
-            'correct_index': options.index(t_key.word_or_phrase),
-            'correct_sign_url': f"/static/{first_asset}",
-            'explanation': t_key.explanation
-        }
-        if validate_question(q, section):
-            questions.append(q)
+            first_asset = target.sign_asset.split(',')[0].strip()
+            q = {
+                'id': f"sec4_seq2m_extra_{uuid.uuid4().hex[:6]}",
+                'type': 'sequence_to_meaning',
+                'section_id': section.id,
+                'section_number': 4,
+                'section_title': section.title,
+                'lesson_id': target.id,
+                'prompt': "What does this sentence mean in ISL?",
+                'media': {
+                    'video_url': f"/static/{first_asset}",
+                    'has_video': True,
+                    'sequence_list': target.sign_asset_list,
+                    'title': target.title
+                },
+                'options': options,
+                'correct_answer': target.word_or_phrase,
+                'correct_index': options.index(target.word_or_phrase),
+                'correct_sign_url': f"/static/{first_asset}",
+                'explanation': target.explanation
+            }
+            if validate_question(q, section):
+                questions.append(q)
 
-        # 10. 1x Sentence Matching
-        match_lessons = random.sample(all_lessons, 4)
-        shuffled_signs = list(match_lessons)
-        random.shuffle(shuffled_signs)
+        # 3x Additional Complete Sentence
+        more_fills = [
+            ("Nice to meet you.", "Nice to ______ you.", "meet", ["help", "student", "go"]),
+            ("I understand sign language.", "I ______ sign language.", "understand", ["am", "help", "need"]),
+            ("Where is the hospital?", "Where is the ______?", "hospital", ["student", "name", "going"])
+        ]
+        for full_s, blank_s, ans_word, dist_words in more_fills:
+            options = [ans_word] + dist_words
+            random.shuffle(options)
+            matching_les = next((l for l in all_lessons if ans_word.lower() in l.word_or_phrase.lower()), all_lessons[0])
+            first_asset = matching_les.sign_asset.split(',')[0].strip() if matching_les.sign_asset else ""
 
-        pairs = []
-        correct_pairs = {}
-        for l in match_lessons:
-            asset_f = l.sign_asset.split(',')[0].strip()
-            pairs.append({'id': l.id, 'word': l.word_or_phrase, 'video_url': f"/static/{asset_f}"})
-            correct_pairs[l.word_or_phrase] = str(l.id)
+            q = {
+                'id': f"sec4_comp_extra_{uuid.uuid4().hex[:6]}",
+                'type': 'complete_sentence',
+                'section_id': section.id,
+                'section_number': 4,
+                'section_title': section.title,
+                'lesson_id': matching_les.id,
+                'prompt': f"Complete the sentence: '{blank_s}'",
+                'media': {'video_url': f"/static/{first_asset}" if first_asset else "", 'has_video': bool(first_asset)},
+                'options': options,
+                'correct_answer': ans_word,
+                'correct_index': options.index(ans_word),
+                'correct_sign_url': f"/static/{first_asset}" if first_asset else "",
+                'explanation': f"The complete sentence taught is '{full_s}'."
+            }
+            if validate_question(q, section):
+                questions.append(q)
 
-        matching_data = {
-            'words': [p['word'] for p in pairs],
-            'signs': [{'id': s.id, 'video_url': f"/static/{s.sign_asset.split(',')[0].strip()}"} for s in shuffled_signs]
-        }
-        random.shuffle(matching_data['words'])
-
-        q = {
-            'id': f"sec4_match_{uuid.uuid4().hex[:6]}",
-            'type': 'matching',
-            'section_id': section.id,
-            'section_number': 4,
-            'section_title': section.title,
-            'prompt': "Match each sentence with its initial sign:",
-            'media': {'has_video': False},
-            'options': [],
-            'pairs': pairs,
-            'matching_data': matching_data,
-            'correct_pairs': correct_pairs,
-            'correct_answer': "All 4 sentence pairs matched",
-            'correct_sign_url': "",
-            'explanation': "Understanding multi-sign sentence transitions is key to fluid sign conversations."
-        }
-        if validate_question(q, section):
-            questions.append(q)
-
-    # SECTION 5: Sentences & Conversations
+    # SECTION 5: Sentences & Conversations (10 lessons, all with sign videos)
     elif sec_num == 5:
         available_dialogues = list(all_lessons)
         random.shuffle(available_dialogues)
 
-        # 1-3. 3x Complete Dialogue
+        # 4x Complete Dialogue
         dialogues = [
             ("Person A: Hello, How are you?", "I am fine, Thank you.", ["Where is the hospital?", "My name is...", "Can you please help me?"]),
             ("Person A: What is your name?", "My name is...", ["I am fine, Thank you.", "Yes, I am learning every day.", "Where is the hospital?"]),
-            ("Person A: Do you know sign language?", "Yes, I am learning every day.", ["I am fine, Thank you.", "My name is...", "Can you please help me?"])
+            ("Person A: Do you know sign language?", "Yes, I am learning every day.", ["I am fine, Thank you.", "My name is...", "Can you please help me?"]),
+            ("Person A: Where is the bus stop?", "It is straight ahead, near the market.", ["I am fine, Thank you.", "My name is...", "Yes, I am learning every day."])
         ]
         for prompt_lead, correct_reply, dist_replies in dialogues:
             options = [correct_reply] + dist_replies
@@ -1163,8 +1074,8 @@ def generate_section_quiz(section_id, user=None):
             if validate_question(q, section):
                 questions.append(q)
 
-        # 4-6. 3x Sequence -> Meaning
-        for _ in range(3):
+        # 4x Sequence -> Meaning
+        for _ in range(4):
             if not available_dialogues:
                 available_dialogues = list(all_lessons)
                 random.shuffle(available_dialogues)
@@ -1197,9 +1108,9 @@ def generate_section_quiz(section_id, user=None):
             if validate_question(q, section):
                 questions.append(q)
 
-        # 7-8. 2x Complete the Sentence / Practical Inquiry
-        inquiry_lessons = [l for l in all_lessons if "hospital" in l.word_or_phrase.lower() or "help" in l.word_or_phrase.lower() or "bus" in l.word_or_phrase.lower()]
-        for l_inq in inquiry_lessons[:2]:
+        # 3x Complete the Sentence / Practical Inquiry
+        inquiry_lessons = [l for l in all_lessons if "hospital" in l.word_or_phrase.lower() or "help" in l.word_or_phrase.lower() or "bus" in l.word_or_phrase.lower() or "safe" in l.word_or_phrase.lower()]
+        for l_inq in inquiry_lessons[:3]:
             distractors = pick_distractors(l_inq, all_lessons, count=3)
             options = [l_inq.word_or_phrase] + distractors
             random.shuffle(options)
@@ -1223,109 +1134,108 @@ def generate_section_quiz(section_id, user=None):
             if validate_question(q, section):
                 questions.append(q)
 
-        # 9. 1x Sentence to Sequence
-        s_target = random.choice([l for l in all_lessons if ',' in l.sign_asset])
-        distractor_lessons = random.sample([l for l in all_lessons if l.id != s_target.id], 3)
-        choices = [s_target] + distractor_lessons
-        random.shuffle(choices)
+        # 2x Sentence to Sequence
+        s_candidates = [l for l in all_lessons if ',' in l.sign_asset]
+        s_targets = random.sample(s_candidates, 2) if len(s_candidates) >= 2 else all_lessons[:2]
+        for s_target in s_targets:
+            distractor_lessons = random.sample([l for l in all_lessons if l.id != s_target.id], 3)
+            choices = [s_target] + distractor_lessons
+            random.shuffle(choices)
 
-        options = []
-        correct_idx = 0
-        for idx, c in enumerate(choices):
-            seq_repr = " → ".join([s.strip().replace('.mp4', '') for s in c.sign_asset.split(',') if s.strip()])
-            options.append(f"{seq_repr} ({c.title})")
-            if c.id == s_target.id:
-                correct_idx = idx
+            options = []
+            correct_idx = 0
+            for idx, c in enumerate(choices):
+                seq_repr = " → ".join([s.strip().replace('.mp4', '') for s in c.sign_asset.split(',') if s.strip()])
+                options.append(f"{seq_repr} ({c.title})")
+                if c.id == s_target.id:
+                    correct_idx = idx
 
-        first_asset = s_target.sign_asset.split(',')[0].strip()
-        q = {
-            'id': f"sec5_s2seq_{uuid.uuid4().hex[:6]}",
-            'type': 'sentence_to_sequence',
-            'section_id': section.id,
-            'section_number': 5,
-            'section_title': section.title,
-            'lesson_id': s_target.id,
-            'prompt': f"Choose the correct sign sequence for: '{s_target.word_or_phrase}'",
-            'media': {'has_video': False},
-            'options': options,
-            'correct_answer': options[correct_idx],
-            'correct_index': correct_idx,
-            'correct_sign_url': f"/static/{first_asset}",
-            'explanation': s_target.explanation
-        }
-        if validate_question(q, section):
-            questions.append(q)
+            first_asset = s_target.sign_asset.split(',')[0].strip()
+            q = {
+                'id': f"sec5_s2seq_{uuid.uuid4().hex[:6]}",
+                'type': 'sign_to_meaning',
+                'section_id': section.id,
+                'section_number': 5,
+                'section_title': section.title,
+                'lesson_id': s_target.id,
+                'prompt': f"Choose the correct sign sequence for: '{s_target.word_or_phrase}'",
+                'media': {'has_video': False},
+                'options': options,
+                'correct_answer': options[correct_idx],
+                'correct_index': correct_idx,
+                'correct_sign_url': f"/static/{first_asset}",
+                'explanation': s_target.explanation
+            }
+            if validate_question(q, section):
+                questions.append(q)
 
-        # 10. 1x Matching Dialogue
-        match_lessons = random.sample(all_lessons, 4)
-        shuffled_signs = list(match_lessons)
-        random.shuffle(shuffled_signs)
+        # 2x Additional Sequence -> Meaning
+        for _ in range(2):
+            if not available_dialogues:
+                available_dialogues = list(all_lessons)
+                random.shuffle(available_dialogues)
+            target = available_dialogues.pop()
+            distractors = pick_distractors(target, all_lessons, count=3)
+            options = [target.word_or_phrase] + distractors
+            random.shuffle(options)
 
-        pairs = []
-        correct_pairs = {}
-        for l in match_lessons:
-            asset_f = l.sign_asset.split(',')[0].strip()
-            pairs.append({'id': l.id, 'word': l.word_or_phrase, 'video_url': f"/static/{asset_f}"})
-            correct_pairs[l.word_or_phrase] = str(l.id)
-
-        matching_data = {
-            'words': [p['word'] for p in pairs],
-            'signs': [{'id': s.id, 'video_url': f"/static/{s.sign_asset.split(',')[0].strip()}"} for s in shuffled_signs]
-        }
-        random.shuffle(matching_data['words'])
-
-        q = {
-            'id': f"sec5_match_{uuid.uuid4().hex[:6]}",
-            'type': 'matching',
-            'section_id': section.id,
-            'section_number': 5,
-            'section_title': section.title,
-            'prompt': "Match each sentence/dialogue with its starting sign:",
-            'media': {'has_video': False},
-            'options': [],
-            'pairs': pairs,
-            'matching_data': matching_data,
-            'correct_pairs': correct_pairs,
-            'correct_answer': "All 4 conversation pairs matched",
-            'correct_sign_url': "",
-            'explanation': "Advanced mastery enables you to understand and produce full Indian Sign Language conversations."
-        }
-        if validate_question(q, section):
-            questions.append(q)
+            first_asset = target.sign_asset.split(',')[0].strip()
+            q = {
+                'id': f"sec5_seq2m_extra_{uuid.uuid4().hex[:6]}",
+                'type': 'sequence_to_meaning',
+                'section_id': section.id,
+                'section_number': 5,
+                'section_title': section.title,
+                'lesson_id': target.id,
+                'prompt': "What does this conversation exchange convey in ISL?",
+                'media': {
+                    'video_url': f"/static/{first_asset}",
+                    'has_video': True,
+                    'sequence_list': target.sign_asset_list,
+                    'title': target.title
+                },
+                'options': options,
+                'correct_answer': target.word_or_phrase,
+                'correct_index': options.index(target.word_or_phrase),
+                'correct_sign_url': f"/static/{first_asset}",
+                'explanation': target.explanation
+            }
+            if validate_question(q, section):
+                questions.append(q)
 
     # Shuffled exercise presentation order
     random.shuffle(questions)
 
-    # Slice to precisely 10 exercises (or total available if < 10)
-    questions = questions[:10]
+    # Slice to precisely 15 questions
+    questions = questions[:15]
+
+    # Attach stage metadata and timers
+    for idx, q in enumerate(questions):
+        if idx < 5:
+            q['stage'] = 1
+            q['stage_name'] = 'Stage 1: Warm Up'
+            q['stage_desc'] = 'Get your bearings! 15s timer'
+            q['timer'] = 15
+        elif idx < 10:
+            q['stage'] = 2
+            q['stage_name'] = 'Stage 2: Speed Up'
+            q['stage_desc'] = 'Pace is increasing! 12s timer'
+            q['timer'] = 12
+        elif idx < 13:
+            q['stage'] = 3
+            q['stage_name'] = 'Stage 3: Challenge'
+            q['stage_desc'] = 'Speed challenge! 10s timer'
+            q['timer'] = 10
+        else:
+            q['stage'] = 4
+            q['stage_name'] = 'Stage 4: Final Rush'
+            q['stage_desc'] = 'Sprint to the finish line! 8s timer'
+            q['timer'] = 8
 
     return {
         'server_questions': questions,
         'client_questions': sanitize_quiz_for_client(questions)
     }
-
-
-def sanitize_quiz_for_client(server_questions):
-    """
-    Removes correct answer keys before sending questions to the browser.
-    Ensures the client cannot inspect or cheat answers.
-    """
-    client_questions = []
-    for idx, q in enumerate(server_questions):
-        client_q = {
-            'question_index': idx,
-            'id': q['id'],
-            'type': q['type'],
-            'section_id': q['section_id'],
-            'section_number': q['section_number'],
-            'section_title': q['section_title'],
-            'prompt': q['prompt'],
-            'media': q.get('media', {}),
-            'options': q.get('options', []),
-            'matching_data': q.get('matching_data', {}),
-        }
-        client_questions.append(client_q)
-    return client_questions
 
 
 def check_quiz_answer(question, user_answer):
@@ -1358,13 +1268,34 @@ def check_quiz_answer(question, user_answer):
         correct_index = question.get('correct_index')
         correct_asset = question.get('correct_answer', '')
         is_correct = False
+
+        # 1. Direct index check
         try:
             if int(user_answer) == correct_index:
                 is_correct = True
         except (ValueError, TypeError):
-            if str(user_answer).strip() == str(correct_asset).strip():
+            pass
+
+        # 2. Letter check ("A", "Option A")
+        if not is_correct and isinstance(user_answer, str):
+            u_clean = user_answer.strip().upper()
+            if u_clean.startswith('OPTION ') and len(u_clean) >= 8:
+                char = u_clean[-1]
+                if 'A' <= char <= 'D' and (ord(char) - 65) == correct_index:
+                    is_correct = True
+            elif len(u_clean) == 1 and 'A' <= u_clean <= 'D':
+                if (ord(u_clean) - 65) == correct_index:
+                    is_correct = True
+
+        # 3. Filename check
+        if not is_correct:
+            u_str = str(user_answer).replace('/static/ISL_Gifs/', '').replace('/static/', '').strip().lower()
+            c_str = str(correct_asset).replace('/static/ISL_Gifs/', '').replace('/static/', '').strip().lower()
+            if u_str and u_str == c_str:
                 is_correct = True
-        return is_correct, f"Sign for {question.get('target_word', 'the word')}", explanation, correct_sign_url
+
+        target_name = question.get('target_word', 'the word')
+        return is_correct, f"Sign for '{target_name}'", explanation, correct_sign_url
 
     elif q_type == 'type_answer':
         acceptable = question.get('acceptable_answers', [])

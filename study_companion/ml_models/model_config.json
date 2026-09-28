@@ -1,0 +1,14 @@
+{
+  "model_type": "ISLTemporalSequenceClassifier (BiGRU + Attention)",
+  "sequence_length": 16,
+  "feature_dim": 126,
+  "hidden_dim": 128,
+  "num_layers": 2,
+  "is_trained": true,
+  "status": "MODEL_READY",
+  "validation_accuracy": 0.5,
+  "test_accuracy": 0.4822,
+  "feature_schema": "wrist_relative_2hand_coordinates",
+  "normalization": "wrist_subtraction_centered",
+  "vocabulary_size": 33
+}

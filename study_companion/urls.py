@@ -23,7 +23,14 @@ urlpatterns = [
     path('learn/section/<int:section_id>/practice/lookup/', views.learn_practice_lookup_api, name='learn_practice_lookup'),
     path('learn/section/<int:section_id>/practice/analyze/', views.learn_practice_analyze_api, name='learn_practice_analyze'),
     path('learn/section/<int:section_id>/practice/attempts/', views.learn_practice_attempts_api, name='learn_practice_attempts'),
+    path('sign-quest/', views.sign_quest_view, name='sign_quest_game'),
+    path('learn/section/<int:section_id>/quest/', views.sign_quest_view, name='sign_quest_section'),
+    path('examination/', views.sign_quest_view, name='examination_game'),
+    path('learn/quiz/', views.sign_quest_entry_view, name='sign_quest_quiz'),
+    path('dino-game/', views.sign_quest_view, name='dino_runner_game'),
+    path('dino-quiz/', views.sign_quest_entry_view, name='dino_quiz_game'),
     path('learn/section/<int:section_id>/quiz/', views.learn_quiz_view, name='learn_quiz'),
+    path('learn/section/<int:section_id>/dino-quiz/', views.learn_quiz_view, name='dino_quiz_section'),
     path('learn/section/<int:section_id>/quiz/api/', views.learn_quiz_api, name='learn_quiz_api'),
     path('learn/section/<int:section_id>/quiz/check-answer/', views.learn_quiz_check_answer_api, name='learn_quiz_check_answer'),
     path('learn/section/<int:section_id>/quiz/submit/', views.learn_quiz_submit_api, name='learn_quiz_submit'),
@@ -36,4 +43,16 @@ urlpatterns = [
     path('concept-assessment/relearn/<str:concept_name>/', views.concept_assessment_relearn_api, name='concept_assessment_relearn'),
     path('concept-assessment/attempts-history/', views.concept_assessment_history_api, name='concept_assessment_history'),
     path('concept-assessment/<int:assessment_id>/teacher-review/', views.teacher_review_view, name='teacher_review'),
+
+    # Sign to English Recognition & Translation Feature
+    path('sign-to-english/', views.sign_to_english_view, name='sign_to_english'),
+    path('api/sign-to-english/predict-auto/', views.sign_to_english_predict_auto_api, name='sign_to_english_predict_auto_api'),
+    path('api/sign-to-english/predict-live/', views.sign_to_english_live_api, name='sign_to_english_live_api'),
+    path('api/sign-to-english/predict-alphabet/', views.sign_to_english_predict_alphabet_api, name='sign_to_english_predict_alphabet_api'),
+    path('api/sign-to-english/suggest-word/', views.sign_to_english_suggest_word_api, name='sign_to_english_suggest_word_api'),
+    path('api/sign-to-english/translate-tokens/', views.sign_to_english_translate_api, name='sign_to_english_translate_api'),
+    path('api/sign-to-english/process-video/', views.sign_to_english_video_api, name='sign_to_english_video_api'),
+    path('api/sign-to-english/status/', views.sign_to_english_status_api, name='sign_to_english_status_api'),
 ]
+
+

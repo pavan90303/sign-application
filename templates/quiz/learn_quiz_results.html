@@ -1,0 +1,210 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Quiz Results: {{ section.title }} • SignAI Pro{% endblock %}
+
+{% block page_title %}Section {{ section.section_number }} Results{% endblock %}
+{% block page_subtitle %}{{ section.title }}{% endblock %}
+
+{% block header_content %}
+<div class="flex items-center space-x-2 text-xs font-semibold text-slate-400">
+    <a href="{% url 'learn_dashboard' %}" class="hover:text-primary transition-colors flex items-center">
+        <span class="material-icons-round text-sm mr-1">school</span> Course
+    </a>
+    <span class="text-slate-600">/</span>
+    <a href="{% url 'learn_section' section.id %}" class="hover:text-primary transition-colors">{{ section.title }}</a>
+    <span class="text-slate-600">/</span>
+    <span class="text-primary font-medium">Quiz Summary</span>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="max-w-2xl mx-auto py-6 space-y-6">
+    <!-- Results Celebration Card -->
+    <div class="glass-panel p-8 lg:p-10 rounded-3xl border border-white/10 text-center relative overflow-hidden shadow-2xl space-y-6">
+        <!-- Ambient Glow -->
+        <div class="absolute inset-0 bg-gradient-to-b {% if passed %}from-emerald-500/15{% else %}from-rose-500/15{% endif %} via-transparent to-primary/5 pointer-events-none"></div>
+
+        <div class="relative z-10 space-y-5">
+            <!-- Circular Score Gauge -->
+            <div class="w-32 h-32 mx-auto rounded-full flex flex-col items-center justify-center border-4 {% if passed %}border-emerald-400 bg-emerald-500/10 text-emerald-400 shadow-2xl shadow-emerald-500/25{% else %}border-rose-400 bg-rose-500/10 text-rose-400 shadow-2xl shadow-rose-500/25{% endif %}">
+                <span class="text-3xl font-black">{{ score }}%</span>
+                <span class="text-[10px] font-extrabold uppercase tracking-widest mt-0.5 {% if passed %}text-emerald-300{% else %}text-rose-300{% endif %}">
+                    {% if passed %}PASSED{% else %}TRY AGAIN{% endif %}
+                </span>
+            </div>
+
+            <!-- Title & Headline -->
+            <div>
+                <span class="px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider {% if passed %}bg-emerald-500/15 text-emerald-400 border border-emerald-500/30{% else %}bg-rose-500/15 text-rose-400 border border-rose-500/30{% endif %}">
+                    SECTION COMPLETE
+                </span>
+                <h1 class="text-2xl lg:text-3xl font-black text-white tracking-tight mt-2.5">
+                    {% if passed %}Great work! You mastered this section.{% else %}Keep practicing! You are close.{% endif %}
+                </h1>
+                <p class="text-slate-300 text-xs mt-1 max-w-md mx-auto">
+                    Pass mark is {{ pass_percentage }}%. Only content from <span class="font-bold text-white">{{ section.title }}</span> was tested.
+                </p>
+            </div>
+
+            <!-- Score Stats Grid -->
+            <div class="grid grid-cols-4 gap-3 max-w-lg mx-auto pt-1">
+                <div class="p-3 rounded-2xl bg-white/5 border border-white/5">
+                    <p class="text-[10px] text-slate-400 font-medium uppercase">Score</p>
+                    <p class="text-lg font-bold text-white">{{ correct_count }} / {{ total_questions }}</p>
+                </div>
+                <div class="p-3 rounded-2xl bg-white/5 border border-white/5">
+                    <p class="text-[10px] text-slate-400 font-medium uppercase">Accuracy</p>
+                    <p class="text-lg font-bold text-primary">{{ score }}%</p>
+                </div>
+                <div class="p-3 rounded-2xl bg-white/5 border border-white/5">
+                    <p class="text-[10px] text-emerald-400 font-medium uppercase">Correct</p>
+                    <p class="text-lg font-bold text-emerald-400">{{ correct_count }}</p>
+                </div>
+                <div class="p-3 rounded-2xl bg-white/5 border border-white/5">
+                    <p class="text-[10px] text-rose-400 font-medium uppercase">Mistakes</p>
+                    <p class="text-lg font-bold text-rose-400">{{ mistakes_count }}</p>
+                </div>
+            </div>
+
+            <!-- Unlocking Notification -->
+            {% if passed %}
+            <div class="p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 text-left flex items-start space-x-3 max-w-lg mx-auto">
+                <span class="material-icons-round text-emerald-400 text-2xl flex-shrink-0 mt-0.5">lock_open</span>
+                <div class="space-y-0.5">
+                    {% if next_section %}
+                    <h4 class="text-xs font-bold text-emerald-300">Next Section Unlocked!</h4>
+                    <p class="text-xs text-slate-300 leading-relaxed">
+                        <span class="text-white font-semibold">Section {{ next_section.section_number }}: {{ next_section.title }}</span> is now fully unlocked.
+                    </p>
+                    {% else %}
+                    <h4 class="text-xs font-bold text-emerald-300">Course Fully Mastered!</h4>
+                    <p class="text-xs text-slate-300 leading-relaxed">You have passed all 5 sections of Indian Sign Language.</p>
+                    {% endif %}
+                </div>
+            </div>
+            {% else %}
+            <div class="p-4 rounded-2xl bg-rose-500/10 border border-rose-500/30 text-left flex items-start space-x-3 max-w-lg mx-auto">
+                <span class="material-icons-round text-rose-400 text-2xl flex-shrink-0 mt-0.5">lock</span>
+                <div class="space-y-0.5">
+                    <h4 class="text-xs font-bold text-rose-300">60% Required to Unlock Next Section</h4>
+                    <p class="text-xs text-slate-300 leading-relaxed">
+                        Review your mistakes below, study the correct signs again, and retry the quiz when ready.
+                    </p>
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- Core Action Buttons -->
+            <div class="pt-2 flex flex-col sm:flex-row items-center justify-center gap-3">
+                {% if review_mistakes and review_mistakes|length > 0 %}
+                <button type="button" onclick="toggleMistakesReview()" class="w-full sm:w-auto inline-flex items-center justify-center px-5 py-3 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 hover:text-white border border-rose-500/30 font-bold text-xs transition-all shadow-md">
+                    <span class="material-icons-round text-base mr-1.5">visibility</span>
+                    Review Mistakes ({{ review_mistakes|length }})
+                </button>
+                {% endif %}
+
+                <a href="{% url 'learn_quiz' section.id %}" class="w-full sm:w-auto inline-flex items-center justify-center px-5 py-3 rounded-xl bg-white/10 hover:bg-white/20 text-white font-bold text-xs border border-white/10 transition-all shadow-md">
+                    <span class="material-icons-round text-base mr-1.5">replay</span>
+                    Try Again
+                </a>
+
+                {% if passed and next_section %}
+                <a href="{% url 'learn_section' next_section.id %}" class="w-full sm:w-auto inline-flex items-center justify-center px-6 py-3 rounded-xl bg-primary hover:bg-primary/90 text-white font-bold text-xs shadow-xl shadow-primary/25 transition-all">
+                    Continue Course
+                    <span class="material-icons-round text-base ml-1.5">arrow_forward</span>
+                </a>
+                {% else %}
+                <a href="{% url 'learn_dashboard' %}" class="w-full sm:w-auto inline-flex items-center justify-center px-5 py-3 rounded-xl bg-primary hover:bg-primary/90 text-white font-bold text-xs shadow-xl shadow-primary/25 transition-all">
+                    Course Map
+                    <span class="material-icons-round text-base ml-1.5">map</span>
+                </a>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Review Mistakes Section (Opens when learner clicks [REVIEW MISTAKES]) -->
+    {% if review_mistakes and review_mistakes|length > 0 %}
+    <div id="mistakes-review-container" class="hidden glass-panel p-6 lg:p-8 rounded-3xl border border-rose-500/30 space-y-6 shadow-2xl">
+        <div class="flex items-center justify-between border-b border-white/5 pb-4">
+            <div class="flex items-center space-x-2">
+                <span class="material-icons-round text-rose-400 text-xl">history_edu</span>
+                <h3 class="text-lg font-bold text-white">Review Mistakes ({{ review_mistakes|length }})</h3>
+            </div>
+            <button type="button" onclick="toggleMistakesReview()" class="text-xs text-slate-400 hover:text-white">Close Review</button>
+        </div>
+
+        <p class="text-xs text-slate-400">
+            Study each question you missed. The correct sign animation is provided so you can replay and reinforce the correct gesture before retrying.
+        </p>
+
+        <div class="space-y-4">
+            {% for m in review_mistakes %}
+            <div class="p-5 rounded-2xl bg-white/[0.03] border border-white/10 space-y-4">
+                <div class="flex items-start justify-between">
+                    <div>
+                        <span class="px-2.5 py-0.5 rounded-full bg-rose-500/20 text-rose-400 text-[10px] uppercase font-bold tracking-wider">Mistake #{{ forloop.counter }}</span>
+                        <h4 class="text-sm font-bold text-white mt-1.5 leading-snug">{{ m.prompt }}</h4>
+                    </div>
+                </div>
+
+                <!-- Side-by-side Answer Comparison -->
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                    <div class="p-3 rounded-xl bg-rose-500/10 border border-rose-500/25">
+                        <span class="text-[10px] uppercase font-bold text-rose-400 block mb-0.5">You Answered</span>
+                        <p class="font-semibold text-rose-200">{{ m.user_answer|default:"(No answer)" }}</p>
+                    </div>
+                    <div class="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/25">
+                        <span class="text-[10px] uppercase font-bold text-emerald-400 block mb-0.5">Correct Answer</span>
+                        <p class="font-semibold text-emerald-200">{{ m.correct_answer }}</p>
+                    </div>
+                </div>
+
+                <!-- Explanation Note -->
+                {% if m.explanation %}
+                <div class="p-3 rounded-xl bg-white/5 border border-white/5 text-xs text-slate-300">
+                    <span class="text-[10px] uppercase font-bold text-primary block mb-0.5">Lesson Note</span>
+                    <p>{{ m.explanation }}</p>
+                </div>
+                {% endif %}
+
+                <!-- Correct Sign Video Player -->
+                {% if m.sign_url %}
+                <div class="pt-2">
+                    <span class="text-[10px] uppercase font-bold text-slate-400 block mb-1.5 flex items-center">
+                        <span class="material-icons-round text-xs mr-1 text-primary">videocam</span> Correct Sign Animation:
+                    </span>
+                    <div class="w-full max-w-sm aspect-video bg-black/60 rounded-xl overflow-hidden border border-white/10 flex items-center justify-center">
+                        <video class="w-full h-full object-contain" autoplay loop muted playsinline controls>
+                            <source src="{{ m.sign_url }}" type="video/mp4">
+                        </video>
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+            {% endfor %}
+        </div>
+
+        <div class="pt-2 flex justify-center">
+            <a href="{% url 'learn_quiz' section.id %}" class="inline-flex items-center px-6 py-3 rounded-xl bg-primary hover:bg-primary/90 text-white font-bold text-xs shadow-lg shadow-primary/25 transition-all">
+                <span class="material-icons-round text-base mr-1.5">replay</span>
+                Try Quiz Again Now
+            </a>
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+<script>
+function toggleMistakesReview() {
+    const el = document.getElementById('mistakes-review-container');
+    if (el) {
+        el.classList.toggle('hidden');
+        if (!el.classList.contains('hidden')) {
+            el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+    }
+}
+</script>
+{% endblock %}

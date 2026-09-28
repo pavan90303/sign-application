@@ -1,0 +1,1754 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#0B0F19" />
+  <title>Sign Quest: 5-World Sign Language Adventure • SignAI Pro</title>
+  <meta name="description" content="Embark on Sign Quest: an interactive 5-world Indian Sign Language adventure map with memory cards, sign matching, sequence puzzles, and boss challenges." />
+
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,300..800;1,300..800&family=IBM+Plex+Mono:wght@400;500;600;700&family=Outfit:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#eef2ff',
+              100: '#e0e7ff',
+              400: '#818cf8',
+              500: '#6366f1',
+              600: '#4f46e5',
+              900: '#1e1b4b',
+            },
+            world1: '#6366f1', // Academy (Indigo)
+            world2: '#10b981', // Village (Emerald)
+            world3: '#f59e0b', // Forest (Amber)
+            world4: '#06b6d4', // City (Cyan)
+            world5: '#ec4899', // Castle (Rose/Gold)
+          },
+          fontFamily: {
+            sans: ['"Plus Jakarta Sans"', 'sans-serif'],
+            display: ['"Outfit"', 'sans-serif'],
+            mono: ['"IBM Plex Mono"', 'monospace'],
+          }
+        }
+      }
+    }
+  </script>
+
+  <style>
+    /* Custom Scrollbar & Aesthetics */
+    ::-webkit-scrollbar { width: 8px; height: 8px; }
+    ::-webkit-scrollbar-track { background: #0b0f19; }
+    ::-webkit-scrollbar-thumb { background: #1e293b; border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: #334155; }
+
+    .glass-panel {
+      background: rgba(15, 23, 42, 0.75);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+    .glass-card {
+      background: linear-gradient(135deg, rgba(30, 41, 59, 0.5) 0%, rgba(15, 23, 42, 0.6) 100%);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+    .node-pulse {
+      animation: pulse-ring 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+    }
+    @keyframes pulse-ring {
+      0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(99, 102, 241, 0.7); }
+      50% { transform: scale(1.05); box-shadow: 0 0 0 12px rgba(99, 102, 241, 0); }
+    }
+    .card-flip {
+      perspective: 1000px;
+    }
+    .card-flip-inner {
+      transition: transform 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+      transform-style: preserve-3d;
+    }
+    .card-flip.flipped .card-flip-inner {
+      transform: rotateY(180deg);
+    }
+    .card-front, .card-back {
+      backface-visibility: hidden;
+      -webkit-backface-visibility: hidden;
+    }
+    .card-back {
+      transform: rotateY(180deg);
+    }
+  </style>
+</head>
+
+<body class="bg-[#070a12] text-slate-100 min-h-screen font-sans selection:bg-brand-500 selection:text-white flex flex-col">
+
+  <!-- ========================================================================= -->
+  <!-- 1. TOP GAME HUD (Hearts, XP, World Name, Global Progress)                  -->
+  <!-- ========================================================================= -->
+  <header class="sticky top-0 z-40 glass-panel border-b border-white/10 px-4 py-3 shadow-xl">
+    <div class="max-w-6xl mx-auto flex items-center justify-between gap-4">
+      
+      <!-- Brand & Map Title -->
+      <div class="flex items-center space-x-3">
+        <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-brand-600 via-indigo-500 to-amber-400 p-[2px] shadow-lg shadow-brand-500/20">
+          <div class="w-full h-full bg-slate-950 rounded-[10px] flex items-center justify-center">
+            <span class="text-xl">🗺️</span>
+          </div>
+        </div>
+        <div>
+          <div class="flex items-center space-x-2">
+            <h1 class="text-base font-black font-display tracking-tight text-white flex items-center">
+              SIGN QUEST
+              <span class="ml-2 text-[10px] font-bold px-2 py-0.5 rounded-full bg-brand-500/20 text-brand-300 border border-brand-500/30">ADVENTURE</span>
+            </h1>
+          </div>
+          <p id="hud-world-label" class="text-xs text-slate-400 font-medium">World 1 — Alphabet Academy</p>
+        </div>
+      </div>
+
+      <!-- Center Status: Hearts & Lives -->
+      <div class="flex items-center space-x-6">
+        <!-- Hearts -->
+        <div class="flex items-center space-x-1.5 bg-rose-950/40 border border-rose-500/20 px-3 py-1.5 rounded-xl shadow-inner">
+          <span class="text-xs font-bold text-rose-300 uppercase tracking-wider mr-1 hidden sm:inline">Lives</span>
+          <div id="hud-hearts" class="flex items-center space-x-1 text-base text-rose-500">
+            <span class="heart-icon transition-all duration-300">❤️</span>
+            <span class="heart-icon transition-all duration-300">❤️</span>
+            <span class="heart-icon transition-all duration-300">❤️</span>
+          </div>
+        </div>
+
+        <!-- Total XP -->
+        <div class="flex items-center space-x-2 bg-amber-500/10 border border-amber-500/25 px-3 py-1.5 rounded-xl shadow-inner">
+          <span class="text-amber-400 text-sm">⚡</span>
+          <div class="flex flex-col">
+            <span class="text-[10px] font-bold text-amber-400/80 uppercase tracking-widest leading-none">Total XP</span>
+            <span id="hud-xp" class="text-sm font-black font-mono text-amber-300 leading-tight">0</span>
+          </div>
+        </div>
+
+        <!-- Stars Earned -->
+        <div class="hidden md:flex items-center space-x-2 bg-yellow-500/10 border border-yellow-500/25 px-3 py-1.5 rounded-xl">
+          <span class="text-yellow-400 text-sm">⭐</span>
+          <span id="hud-stars" class="text-xs font-bold text-yellow-300 font-mono">0 / 45</span>
+        </div>
+      </div>
+
+      <!-- Right Controls: Sound, Mistakes, Return to Course -->
+      <div class="flex items-center space-x-2">
+        <button id="btn-sound-toggle" onclick="toggleAudio()" class="p-2 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white transition-colors border border-white/5" title="Toggle Sound">
+          <span id="sound-icon" class="text-sm">🔊</span>
+        </button>
+
+        <button onclick="openMistakeReview()" class="p-2 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white transition-colors border border-white/5 relative" title="Review Mistakes">
+          <span class="text-sm">📋</span>
+          <span id="badge-mistakes" class="hidden absolute -top-1 -right-1 w-4 h-4 bg-rose-500 text-[10px] font-bold rounded-full flex items-center justify-center text-white">0</span>
+        </button>
+
+        <a href="/learn/" class="inline-flex items-center px-3 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-slate-200 hover:text-white text-xs font-semibold border border-white/10 transition-all shadow-sm">
+          <span class="mr-1.5 text-xs">←</span> Course
+        </a>
+      </div>
+
+    </div>
+
+    <!-- Progress Indicator Bar -->
+    <div class="max-w-6xl mx-auto mt-2.5">
+      <div class="w-full bg-slate-900 rounded-full h-1.5 overflow-hidden border border-white/5">
+        <div id="hud-progress-bar" class="bg-gradient-to-r from-brand-500 via-emerald-400 to-amber-400 h-1.5 rounded-full transition-all duration-500" style="width: 7%;"></div>
+      </div>
+    </div>
+  </header>
+
+  <!-- ========================================================================= -->
+  <!-- 2. MAIN CONTAINER: ADVENTURE MAP VIEW                                      -->
+  <!-- ========================================================================= -->
+  <main class="flex-1 max-w-5xl mx-auto w-full px-4 py-8 relative">
+
+    <!-- Active Resume Adventure Banner -->
+    <div id="resume-banner" class="glass-panel p-5 rounded-2xl border border-brand-500/30 mb-8 shadow-2xl relative overflow-hidden flex flex-col md:flex-row items-center justify-between gap-4">
+      <div class="absolute -right-8 -bottom-8 w-32 h-32 bg-brand-500/10 rounded-full blur-2xl pointer-events-none"></div>
+      
+      <div class="flex items-center space-x-4">
+        <div class="w-12 h-12 rounded-2xl bg-brand-500/20 border border-brand-500/40 flex items-center justify-center text-2xl shadow-inner">
+          🧭
+        </div>
+        <div>
+          <span class="text-[10px] font-black uppercase tracking-widest text-brand-400">Ready to Learn</span>
+          <h2 id="resume-title" class="text-lg font-bold text-white font-display">Continue Sign Quest</h2>
+          <p id="resume-subtitle" class="text-xs text-slate-400">World 1: Challenge 1 • Fingerspell Letter A</p>
+        </div>
+      </div>
+
+      <div class="flex items-center space-x-3 w-full md:w-auto">
+        <button onclick="resumeCurrentChallenge()" class="flex-1 md:flex-initial inline-flex items-center justify-center px-6 py-2.5 rounded-xl bg-gradient-to-r from-brand-500 to-indigo-600 hover:from-brand-600 hover:to-indigo-700 text-white font-bold text-xs uppercase tracking-wider shadow-lg shadow-brand-500/25 transition-all transform hover:-translate-y-0.5 active:translate-y-0">
+          Play Challenge <span class="ml-2">▶</span>
+        </button>
+        <button onclick="confirmResetProgress()" class="p-2.5 rounded-xl bg-slate-800/60 hover:bg-rose-500/20 text-slate-400 hover:text-rose-400 text-xs border border-white/5 transition-all" title="Reset Quest Progress">
+          🔄
+        </button>
+      </div>
+    </div>
+
+    <!-- MAP ROADMAP PATH (5 Worlds x 3 Challenges) -->
+    <div id="map-container" class="space-y-12 relative pb-16">
+      <!-- Worlds will be rendered here by JavaScript -->
+    </div>
+
+  </main>
+
+  <!-- ========================================================================= -->
+  <!-- 3. CHALLENGE MODAL / ACTIVE GAMEPLAY ARENA                                 -->
+  <!-- ========================================================================= -->
+  <div id="challenge-modal" class="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-md hidden flex items-center justify-center p-4 overflow-y-auto">
+    <div class="glass-panel w-full max-w-3xl rounded-3xl border border-white/10 shadow-2xl overflow-hidden my-auto transition-all transform duration-300 scale-95 opacity-0" id="challenge-card">
+      
+      <!-- Challenge Modal Top Bar -->
+      <div class="px-6 py-4 border-b border-white/10 flex items-center justify-between bg-slate-900/50">
+        <div class="flex items-center space-x-3">
+          <span id="modal-type-badge" class="px-3 py-1 rounded-full text-[11px] font-bold uppercase tracking-wider bg-brand-500/20 text-brand-300 border border-brand-500/30">
+            Type 1: What sign is this?
+          </span>
+          <span id="modal-world-badge" class="text-xs text-slate-400 font-medium">World 1</span>
+        </div>
+
+        <div class="flex items-center space-x-4">
+          <!-- Speed Challenge Timer (If applicable) -->
+          <div id="challenge-timer-wrap" class="hidden flex items-center space-x-1.5 px-3 py-1 rounded-full bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 font-mono text-xs font-bold">
+            <span>⏱️</span>
+            <span id="challenge-timer-val">15s</span>
+          </div>
+
+          <button onclick="closeChallengeModal()" class="text-slate-400 hover:text-white p-1 rounded-lg transition-colors">
+            ✕
+          </button>
+        </div>
+      </div>
+
+      <!-- Challenge Content Body -->
+      <div class="p-6 md:p-8 space-y-6">
+        
+        <!-- Prompt / Instruction Header -->
+        <div class="text-center space-y-1">
+          <h3 id="challenge-instruction" class="text-xl md:text-2xl font-bold font-display text-white">
+            What letter does this hand sign represent?
+          </h3>
+          <p id="challenge-hint" class="text-xs text-slate-400">
+            Watch the sign demonstration carefully and choose the correct answer.
+          </p>
+        </div>
+
+        <!-- DYNAMIC MINI-GAME ARENA -->
+        <div id="game-arena" class="min-h-[280px] flex flex-col items-center justify-center">
+          <!-- Rendered dynamically by active Game Type -->
+        </div>
+
+        <!-- Immediate Feedback Footer Bar (Hidden by default, shown upon answer) -->
+        <div id="feedback-banner" class="hidden p-4 rounded-2xl border transition-all duration-300 flex flex-col md:flex-row items-center justify-between gap-4">
+          <div class="flex items-center space-x-3">
+            <div id="feedback-icon" class="w-10 h-10 rounded-xl flex items-center justify-center text-xl font-bold">
+              ✓
+            </div>
+            <div>
+              <h4 id="feedback-title" class="text-sm font-black text-white uppercase tracking-wider">CORRECT!</h4>
+              <p id="feedback-desc" class="text-xs text-slate-300">Great job! +100 XP awarded.</p>
+            </div>
+          </div>
+
+          <button id="feedback-btn" onclick="handleFeedbackContinue()" class="px-6 py-2.5 rounded-xl font-bold text-xs uppercase tracking-wider shadow-lg transition-all">
+            Continue
+          </button>
+        </div>
+
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ========================================================================= -->
+  <!-- 4. WORLD COMPLETION MODAL                                                 -->
+  <!-- ========================================================================= -->
+  <div id="world-complete-modal" class="fixed inset-0 z-50 bg-slate-950/90 backdrop-blur-md hidden flex items-center justify-center p-4">
+    <div class="glass-panel max-w-md w-full rounded-3xl border border-white/10 p-8 text-center space-y-6 shadow-2xl relative overflow-hidden">
+      <div class="absolute -top-12 -left-12 w-36 h-36 bg-amber-500/20 rounded-full blur-3xl"></div>
+      
+      <div class="w-20 h-20 rounded-3xl bg-gradient-to-tr from-amber-400 to-yellow-500 flex items-center justify-center text-4xl shadow-xl shadow-amber-500/30 mx-auto">
+        🎉
+      </div>
+
+      <div class="space-y-2">
+        <span class="text-xs font-black uppercase tracking-widest text-amber-400">World Complete!</span>
+        <h3 id="world-complete-name" class="text-2xl font-black font-display text-white">Alphabet Academy Completed</h3>
+        <p class="text-xs text-slate-400">You mastered all challenges in this world!</p>
+      </div>
+
+      <div class="p-4 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-around">
+        <div>
+          <span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest block">World Stars</span>
+          <span class="text-lg font-black text-yellow-400">⭐⭐⭐</span>
+        </div>
+        <div class="w-px h-8 bg-white/10"></div>
+        <div>
+          <span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest block">XP Bonus</span>
+          <span class="text-lg font-black text-amber-400 font-mono">+300 XP</span>
+        </div>
+      </div>
+
+      <button onclick="closeWorldCompleteModal()" class="w-full py-3 rounded-xl bg-gradient-to-r from-amber-500 to-yellow-600 hover:from-amber-600 hover:to-yellow-700 text-slate-950 font-black text-xs uppercase tracking-wider shadow-lg transition-all">
+        Continue to Next World →
+      </button>
+    </div>
+  </div>
+
+  <!-- ========================================================================= -->
+  <!-- 5. FINAL GRAND VICTORY MODAL (SIGN QUEST COMPLETE)                        -->
+  <!-- ========================================================================= -->
+  <div id="final-victory-modal" class="fixed inset-0 z-50 bg-slate-950/95 backdrop-blur-lg hidden flex items-center justify-center p-4 overflow-y-auto">
+    <div class="glass-panel max-w-xl w-full rounded-3xl border border-amber-500/30 p-8 text-center space-y-6 shadow-2xl relative my-auto">
+      <div class="absolute -top-20 inset-x-0 h-40 bg-gradient-to-b from-amber-500/20 to-transparent blur-3xl pointer-events-none"></div>
+
+      <div class="w-24 h-24 rounded-3xl bg-gradient-to-tr from-amber-400 via-yellow-500 to-rose-500 flex items-center justify-center text-5xl shadow-2xl shadow-amber-500/40 mx-auto">
+        🏆
+      </div>
+
+      <div class="space-y-2">
+        <span class="text-xs font-black uppercase tracking-widest text-amber-400">Grand Victory</span>
+        <h2 class="text-3xl font-black font-display text-white">SIGN QUEST COMPLETE!</h2>
+        <p class="text-xs text-slate-300 max-w-md mx-auto">
+          Congratulations! You have conquered all five worlds, defeated the Castle Boss, and proven mastery of Indian Sign Language communication.
+        </p>
+      </div>
+
+      <!-- Stats Grid -->
+      <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 text-left">
+        <div class="p-3.5 rounded-2xl bg-white/5 border border-white/10">
+          <span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest block">Total XP</span>
+          <span id="final-xp-stat" class="text-lg font-black text-amber-400 font-mono">1,850</span>
+        </div>
+        <div class="p-3.5 rounded-2xl bg-white/5 border border-white/10">
+          <span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest block">Challenges</span>
+          <span class="text-lg font-black text-emerald-400 font-mono">15 / 15</span>
+        </div>
+        <div class="p-3.5 rounded-2xl bg-white/5 border border-white/10">
+          <span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest block">Total Stars</span>
+          <span id="final-stars-stat" class="text-lg font-black text-yellow-400 font-mono">45 / 45</span>
+        </div>
+        <div class="p-3.5 rounded-2xl bg-white/5 border border-white/10">
+          <span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest block">Accuracy</span>
+          <span id="final-accuracy-stat" class="text-lg font-black text-cyan-400 font-mono">94%</span>
+        </div>
+      </div>
+
+      <!-- Actions -->
+      <div class="flex flex-col sm:flex-row items-center gap-3 pt-2">
+        <button onclick="openMistakeReview()" class="w-full sm:flex-1 py-3 rounded-xl bg-white/10 hover:bg-white/20 text-white font-bold text-xs uppercase tracking-wider border border-white/10 transition-all">
+          Review Mistakes 📋
+        </button>
+        <button onclick="restartSignQuest()" class="w-full sm:flex-1 py-3 rounded-xl bg-white/10 hover:bg-white/20 text-white font-bold text-xs uppercase tracking-wider border border-white/10 transition-all">
+          Play Again 🔄
+        </button>
+        <a href="/learn/" class="w-full sm:flex-1 py-3 rounded-xl bg-gradient-to-r from-brand-500 to-indigo-600 hover:from-brand-600 hover:to-indigo-700 text-white font-bold text-xs uppercase tracking-wider shadow-lg shadow-brand-500/25 transition-all text-center">
+          Course Dashboard →
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========================================================================= -->
+  <!-- 6. MISTAKE REVIEW MODAL                                                   -->
+  <!-- ========================================================================= -->
+  <div id="mistake-review-modal" class="fixed inset-0 z-50 bg-slate-950/90 backdrop-blur-md hidden flex items-center justify-center p-4 overflow-y-auto">
+    <div class="glass-panel max-w-2xl w-full rounded-3xl border border-white/10 p-6 md:p-8 space-y-6 shadow-2xl my-auto max-h-[90vh] flex flex-col">
+      <div class="flex items-center justify-between border-b border-white/10 pb-4">
+        <div class="flex items-center space-x-3">
+          <span class="text-2xl">📋</span>
+          <div>
+            <h3 class="text-lg font-bold text-white font-display">Mistake Review System</h3>
+            <p class="text-xs text-slate-400">Review tricky signs and learn the correct gestures.</p>
+          </div>
+        </div>
+        <button onclick="closeMistakeReview()" class="text-slate-400 hover:text-white p-1 rounded-lg">✕</button>
+      </div>
+
+      <div id="mistakes-list" class="flex-1 overflow-y-auto space-y-3 pr-1">
+        <!-- Rendered dynamically -->
+      </div>
+
+      <button onclick="closeMistakeReview()" class="w-full py-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-white font-bold text-xs uppercase tracking-wider">
+        Close Review
+      </button>
+    </div>
+  </div>
+
+  <!-- ========================================================================= -->
+  <!-- 7. CHALLENGE FAILED MODAL (0 Hearts)                                      -->
+  <!-- ========================================================================= -->
+  <div id="challenge-failed-modal" class="fixed inset-0 z-50 bg-slate-950/90 backdrop-blur-md hidden flex items-center justify-center p-4">
+    <div class="glass-panel max-w-md w-full rounded-3xl border border-rose-500/30 p-8 text-center space-y-6 shadow-2xl">
+      <div class="w-20 h-20 rounded-3xl bg-rose-500/20 border border-rose-500/40 flex items-center justify-center text-4xl mx-auto text-rose-400">
+        💔
+      </div>
+      <div class="space-y-2">
+        <h3 class="text-xl font-bold font-display text-white">Challenge Failed</h3>
+        <p class="text-xs text-slate-400">You ran out of hearts for this challenge. Review the sign gesture and try again!</p>
+      </div>
+      <button onclick="retryCurrentChallenge()" class="w-full py-3 rounded-xl bg-gradient-to-r from-rose-500 to-pink-600 hover:from-rose-600 text-white font-bold text-xs uppercase tracking-wider shadow-lg transition-all">
+        Try Again (Restore Hearts)
+      </button>
+    </div>
+  </div>
+
+  <!-- ========================================================================= -->
+  <!-- 8. CORE GAME SCRIPT & LOGIC ENGINE                                        -->
+  <!-- ========================================================================= -->
+  <script>
+    /* ========================================================================
+       A. 15-CHALLENGE SPECIFICATION ACROSS 5 WORLDS (Reusing real assets)
+       ======================================================================== */
+    const WORLDS_CONFIG = [
+      {
+        id: 1,
+        title: "World 1 — Alphabet Academy",
+        icon: "🎓",
+        themeColor: "#6366f1",
+        description: "Master fingerspelling, basic handshapes, and alphabet recognition.",
+        challenges: [
+          {
+            id: 1,
+            worldId: 1,
+            title: "Fingerspell Letter A",
+            type: 1, // What sign is this?
+            instruction: "What letter does this hand sign represent?",
+            videoUrl: "/assets/signs/A.mp4",
+            correctAnswer: "A",
+            options: ["A", "B", "C", "D"],
+            explanation: "Fist with thumb resting alongside the index finger represents letter A.",
+            xp: 100
+          },
+          {
+            id: 2,
+            worldId: 1,
+            title: "Find Letter B",
+            type: 2, // Find the correct sign
+            targetWord: "B",
+            instruction: "FIND THE SIGN FOR: B",
+            cards: [
+              { label: "Sign 1", videoUrl: "/assets/signs/A.mp4", isCorrect: false, word: "A" },
+              { label: "Sign 2", videoUrl: "/assets/signs/B.mp4", isCorrect: true, word: "B" },
+              { label: "Sign 3", videoUrl: "/assets/signs/C.mp4", isCorrect: false, word: "C" },
+              { label: "Sign 4", videoUrl: "/assets/signs/D.mp4", isCorrect: false, word: "D" },
+            ],
+            explanation: "Open flat palm with four upright fingers and thumb across palm represents letter B.",
+            xp: 100
+          },
+          {
+            id: 3,
+            worldId: 1,
+            title: "Alphabet Memory Match",
+            type: 4, // Memory Cards
+            instruction: "Find all matching pairs of letters and their signs!",
+            pairs: [
+              { id: "pair_c", word: "C", videoUrl: "/assets/signs/C.mp4" },
+              { id: "pair_d", word: "D", videoUrl: "/assets/signs/D.mp4" },
+              { id: "pair_e", word: "E", videoUrl: "/assets/signs/E.mp4" }
+            ],
+            explanation: "Letters C, D, and E fingerspelling matched with their corresponding sign shapes.",
+            xp: 120
+          }
+        ]
+      },
+      {
+        id: 2,
+        title: "World 2 — Everyday Village",
+        icon: "🏘️",
+        themeColor: "#10b981",
+        description: "Learn everyday greetings, gratitude, and community conversation.",
+        challenges: [
+          {
+            id: 4,
+            worldId: 2,
+            title: "Friendly Greeting",
+            type: 1, // What sign is this?
+            instruction: "What everyday greeting is shown in this video?",
+            videoUrl: "/assets/signs/Hello.mp4",
+            correctAnswer: "Hello",
+            options: ["Hello", "Bye", "Help", "Good"],
+            explanation: "An open palm salute moving outward from temple indicates Hello.",
+            xp: 100
+          },
+          {
+            id: 5,
+            worldId: 2,
+            title: "Expressing Gratitude",
+            type: 2, // Find the sign
+            targetWord: "THANK YOU",
+            instruction: "FIND THE SIGN FOR: THANK YOU",
+            cards: [
+              { label: "Sign 1", videoUrl: "/assets/signs/Help.mp4", isCorrect: false, word: "Help" },
+              { label: "Sign 2", videoUrl: "/assets/signs/Thank You.mp4", isCorrect: true, word: "Thank You" },
+              { label: "Sign 3", videoUrl: "/assets/signs/Hello.mp4", isCorrect: false, word: "Hello" },
+              { label: "Sign 4", videoUrl: "/assets/signs/Happy.mp4", isCorrect: false, word: "Happy" }
+            ],
+            explanation: "Fingertips placed near lips moving warmly outward signifies Thank You.",
+            xp: 100
+          },
+          {
+            id: 6,
+            worldId: 2,
+            title: "Village Matchup",
+            type: 3, // Match the signs
+            instruction: "Match each greeting with its sign gesture:",
+            items: [
+              { word: "Happy", videoUrl: "/assets/signs/Happy.mp4" },
+              { word: "Good", videoUrl: "/assets/signs/Good.mp4" },
+              { word: "Bye", videoUrl: "/assets/signs/Bye.mp4" }
+            ],
+            explanation: "Everyday community vocabulary for feelings, greetings, and farewells.",
+            xp: 120
+          }
+        ]
+      },
+      {
+        id: 3,
+        title: "World 3 — Word Forest",
+        icon: "🌳",
+        themeColor: "#f59e0b",
+        description: "Venture deep into verbs, daily actions, and household vocabulary.",
+        challenges: [
+          {
+            id: 7,
+            worldId: 3,
+            title: "Forest Haven",
+            type: 1, // What sign is this?
+            instruction: "Identify this everyday location sign:",
+            videoUrl: "/assets/signs/Home.mp4",
+            correctAnswer: "Home",
+            options: ["Home", "Work", "Study", "Day"],
+            explanation: "Touching fingertips near the cheek and ear represents Home.",
+            xp: 100
+          },
+          {
+            id: 8,
+            worldId: 3,
+            title: "Action Verbs Pairing",
+            type: 3, // Match the signs
+            instruction: "Match each action verb to its sign demonstration:",
+            items: [
+              { word: "Eat", videoUrl: "/assets/signs/Eat.mp4" },
+              { word: "Help", videoUrl: "/assets/signs/Help.mp4" },
+              { word: "Time", videoUrl: "/assets/signs/Time.mp4" }
+            ],
+            explanation: "Core action signs for eating, helping, and checking the time.",
+            xp: 120
+          },
+          {
+            id: 9,
+            worldId: 3,
+            title: "Forest Memory Maze",
+            type: 4, // Memory Cards
+            instruction: "Find the pairs hidden in the forest!",
+            pairs: [
+              { id: "pair_learn", word: "Learn", videoUrl: "/assets/signs/Learn.mp4" },
+              { id: "pair_sign", word: "Sign", videoUrl: "/assets/signs/Sign.mp4" },
+              { id: "pair_work", word: "Work", videoUrl: "/assets/signs/Work.mp4" }
+            ],
+            explanation: "Key concepts for Learning, Signing, and Working.",
+            xp: 120
+          }
+        ]
+      },
+      {
+        id: 4,
+        title: "World 4 — Sentence City",
+        icon: "🌆",
+        themeColor: "#06b6d4",
+        description: "Connect signs into expressions, dialogue phrases, and scenarios.",
+        challenges: [
+          {
+            id: 10,
+            worldId: 4,
+            title: "Sign Sequence: Learning",
+            type: 5, // Sign Sequence
+            instruction: "Arrange the signs in correct order to say:",
+            targetSentence: "WE LEARN SIGN",
+            sequenceItems: [
+              { id: "seq_1", word: "WE", videoUrl: "/assets/signs/WE.mp4", correctOrder: 0 },
+              { id: "seq_2", word: "LEARN", videoUrl: "/assets/signs/Learn.mp4", correctOrder: 1 },
+              { id: "seq_3", word: "SIGN", videoUrl: "/assets/signs/Sign.mp4", correctOrder: 2 }
+            ],
+            explanation: "Natural ISL sequence for 'We learn sign language'.",
+            xp: 150
+          },
+          {
+            id: 11,
+            worldId: 4,
+            title: "Spotting Assistance",
+            type: 2, // Find the sign
+            targetWord: "HELP",
+            instruction: "SCENARIO: Someone requests assistance. FIND THE SIGN FOR: HELP",
+            cards: [
+              { label: "Sign 1", videoUrl: "/assets/signs/Work.mp4", isCorrect: false, word: "Work" },
+              { label: "Sign 2", videoUrl: "/assets/signs/Help.mp4", isCorrect: true, word: "Help" },
+              { label: "Sign 3", videoUrl: "/assets/signs/Safe.mp4", isCorrect: false, word: "Safe" },
+              { label: "Sign 4", videoUrl: "/assets/signs/Day.mp4", isCorrect: false, word: "Day" }
+            ],
+            explanation: "Flat open hand lifting a thumbs-up fist represents giving or requesting Help.",
+            xp: 120
+          },
+          {
+            id: 12,
+            worldId: 4,
+            title: "Workday Communication",
+            type: 6, // Sentence Challenge
+            scenario: "You meet a colleague at the office and want to wish them a productive day.",
+            instruction: "Which sign sequence expresses: GOOD WORK TODAY?",
+            options: [
+              "GOOD → WORK → DAY",
+              "HOME → TIME → EAT",
+              "BYE → STUDY → NO",
+              "HELP → ME → NOW"
+            ],
+            correctAnswer: "GOOD → WORK → DAY",
+            demonstrationVideos: ["/assets/signs/Good.mp4", "/assets/signs/Work.mp4", "/assets/signs/Day.mp4"],
+            explanation: "GOOD followed by WORK and DAY creates a polite greeting for the workplace.",
+            xp: 150
+          }
+        ]
+      },
+      {
+        id: 5,
+        title: "World 5 — Communication Castle",
+        icon: "🏰",
+        themeColor: "#ec4899",
+        description: "Prove fluent sign dialogue and conquer the Castle Boss Trial.",
+        challenges: [
+          {
+            id: 13,
+            worldId: 5,
+            title: "Cooperative Dialogue",
+            type: 5, // Sign Sequence
+            instruction: "Arrange the signs to communicate:",
+            targetSentence: "YOU HELP ME",
+            sequenceItems: [
+              { id: "seq_you", word: "YOU", videoUrl: "/assets/signs/You.mp4", correctOrder: 0 },
+              { id: "seq_help", word: "HELP", videoUrl: "/assets/signs/Help.mp4", correctOrder: 1 },
+              { id: "seq_me", word: "ME", videoUrl: "/assets/signs/ME.mp4", correctOrder: 2 }
+            ],
+            explanation: "Directional and subject-verb-object clarity in ISL.",
+            xp: 150
+          },
+          {
+            id: 14,
+            worldId: 5,
+            title: "Joyful Community Speech",
+            type: 6, // Sentence Challenge
+            scenario: "A visitor asks how your school community feels about sign language.",
+            instruction: "Which sign sequence expresses: WE HAPPY LEARN?",
+            options: [
+              "WE → HAPPY → LEARN",
+              "SAD → ALONE → WORK",
+              "NO → SIGN → HOME",
+              "TIME → BYE → OUT"
+            ],
+            correctAnswer: "WE → HAPPY → LEARN",
+            demonstrationVideos: ["/assets/signs/WE.mp4", "/assets/signs/Happy.mp4", "/assets/signs/Learn.mp4"],
+            explanation: "Signifying collective joy in education through WE, HAPPY, and LEARN.",
+            xp: 150
+          },
+          {
+            id: 15,
+            worldId: 5,
+            title: "👑 FINAL SIGN CHALLENGE (BOSS BATTLE)",
+            type: 7, // Castle Boss Multi-Phase
+            isBoss: true,
+            instruction: "👑 CASTLE GUARDIAN'S ULTIMATE SIGN TRIAL",
+            subSteps: [
+              {
+                stepNum: 1,
+                prompt: "Phase 1: Identify the master sign for universal communication:",
+                videoUrl: "/assets/signs/Language.mp4",
+                correctAnswer: "Language",
+                options: ["Language", "Talk", "Sing", "Fight"]
+              },
+              {
+                stepNum: 2,
+                prompt: "Phase 2: Find the sign for 'WORLD':",
+                targetWord: "WORLD",
+                cards: [
+                  { label: "1", videoUrl: "/assets/signs/World.mp4", isCorrect: true, word: "World" },
+                  { label: "2", videoUrl: "/assets/signs/Day.mp4", isCorrect: false, word: "Day" },
+                  { label: "3", videoUrl: "/assets/signs/Safe.mp4", isCorrect: false, word: "Safe" },
+                  { label: "4", videoUrl: "/assets/signs/Time.mp4", isCorrect: false, word: "Time" }
+                ]
+              },
+              {
+                stepNum: 3,
+                prompt: "Phase 3: Assemble the Royal Sign Decree: WELCOME WORLD SIGN",
+                targetSentence: "WELCOME WORLD SIGN",
+                sequenceItems: [
+                  { id: "b_1", word: "WELCOME", videoUrl: "/assets/signs/Welcome.mp4", correctOrder: 0 },
+                  { id: "b_2", word: "WORLD", videoUrl: "/assets/signs/World.mp4", correctOrder: 1 },
+                  { id: "b_3", word: "SIGN", videoUrl: "/assets/signs/Sign.mp4", correctOrder: 2 }
+                ]
+              }
+            ],
+            explanation: "Universal mastery: Language, World, and Welcome.",
+            xp: 300
+          }
+        ]
+      }
+    ];
+
+    /* ========================================================================
+       B. LOCAL STATE & PROGRESS STORAGE
+       ======================================================================== */
+    const STORAGE_KEY = 'sign_quest_save_v2';
+
+    let gameState = {
+      unlockedChallenges: [1], // Challenge 1 is unlocked initially
+      completedChallenges: {}, // id -> { stars: 3, score: 100 }
+      totalXp: 0,
+      hearts: 3,
+      currentChallengeId: 1,
+      mistakes: [],
+      soundEnabled: true,
+    };
+
+    function loadState() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          gameState = { ...gameState, ...parsed };
+          // Ensure challenge 1 is always unlocked
+          if (!gameState.unlockedChallenges.includes(1)) {
+            gameState.unlockedChallenges.push(1);
+          }
+        }
+      } catch (e) {
+        console.error("Failed to load Sign Quest save:", e);
+      }
+    }
+
+    function saveState() {
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(gameState));
+      } catch (e) {
+        console.error("Failed to save Sign Quest state:", e);
+      }
+    }
+
+    function resetGameState() {
+      gameState = {
+        unlockedChallenges: [1],
+        completedChallenges: {},
+        totalXp: 0,
+        hearts: 3,
+        currentChallengeId: 1,
+        mistakes: [],
+        soundEnabled: gameState.soundEnabled
+      };
+      saveState();
+      updateHud();
+      renderMap();
+    }
+
+    /* ========================================================================
+       C. AUDIO SYNTHESIS ENGINE (Zero external assets needed)
+       ======================================================================== */
+    let audioCtx = null;
+    function getAudioContext() {
+      if (!audioCtx) {
+        const AudioContext = window.AudioContext || window.webkitAudioContext;
+        if (AudioContext) audioCtx = new AudioContext();
+      }
+      return audioCtx;
+    }
+
+    function playSound(type) {
+      if (!gameState.soundEnabled) return;
+      try {
+        const ctx = getAudioContext();
+        if (!ctx) return;
+        if (ctx.state === 'suspended') ctx.resume();
+
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+
+        const now = ctx.currentTime;
+        if (type === 'correct') {
+          // Cheerful chime (C5 -> E5 -> G5)
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(523.25, now);
+          osc.frequency.setValueAtTime(659.25, now + 0.08);
+          osc.frequency.setValueAtTime(783.99, now + 0.16);
+          gain.gain.setValueAtTime(0.2, now);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + 0.4);
+          osc.start(now);
+          osc.stop(now + 0.4);
+        } else if (type === 'wrong') {
+          // Buzzer sound
+          osc.type = 'sawtooth';
+          osc.frequency.setValueAtTime(160, now);
+          osc.frequency.linearRampToValueAtTime(110, now + 0.25);
+          gain.gain.setValueAtTime(0.25, now);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + 0.25);
+          osc.start(now);
+          osc.stop(now + 0.25);
+        } else if (type === 'fanfare') {
+          // World victory chime
+          osc.type = 'triangle';
+          osc.frequency.setValueAtTime(440, now);
+          osc.frequency.setValueAtTime(554.37, now + 0.1);
+          osc.frequency.setValueAtTime(659.25, now + 0.2);
+          osc.frequency.setValueAtTime(880, now + 0.3);
+          gain.gain.setValueAtTime(0.25, now);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + 0.6);
+          osc.start(now);
+          osc.stop(now + 0.6);
+        }
+      } catch (err) {
+        // Audio error silent fallback
+      }
+    }
+
+    function toggleAudio() {
+      gameState.soundEnabled = !gameState.soundEnabled;
+      saveState();
+      document.getElementById('sound-icon').innerText = gameState.soundEnabled ? '🔊' : '🔇';
+    }
+
+    /* ========================================================================
+       D. HUD & PROGRESS UPDATER
+       ======================================================================== */
+    function updateHud() {
+      // XP & Stars
+      document.getElementById('hud-xp').innerText = gameState.totalXp.toLocaleString();
+      const completedCount = Object.keys(gameState.completedChallenges).length;
+      let totalStars = 0;
+      Object.values(gameState.completedChallenges).forEach(c => totalStars += (c.stars || 0));
+      document.getElementById('hud-stars').innerText = `${totalStars} / 45`;
+
+      // Progress Bar
+      const pct = Math.max(7, Math.round((completedCount / 15) * 100));
+      document.getElementById('hud-progress-bar').style.width = `${pct}%`;
+
+      // Hearts UI
+      const heartsContainer = document.getElementById('hud-hearts');
+      let heartsHtml = '';
+      for (let i = 0; i < 3; i++) {
+        if (i < gameState.hearts) {
+          heartsHtml += '<span class="text-rose-500 scale-100 transition-transform">❤️</span>';
+        } else {
+          heartsHtml += '<span class="text-slate-600 scale-90 transition-transform opacity-40">🖤</span>';
+        }
+      }
+      heartsContainer.innerHTML = heartsHtml;
+
+      // Current World Label & Resume card
+      const currWorldId = Math.min(5, Math.ceil(gameState.currentChallengeId / 3));
+      const currWorld = WORLDS_CONFIG.find(w => w.id === currWorldId) || WORLDS_CONFIG[0];
+      document.getElementById('hud-world-label').innerText = currWorld.title;
+
+      // Mistake Badge
+      const mistakeBadge = document.getElementById('badge-mistakes');
+      if (gameState.mistakes.length > 0) {
+        mistakeBadge.classList.remove('hidden');
+        mistakeBadge.innerText = gameState.mistakes.length;
+      } else {
+        mistakeBadge.classList.add('hidden');
+      }
+
+      // Resume Card
+      const currentCh = getChallengeById(gameState.currentChallengeId);
+      if (currentCh) {
+        document.getElementById('resume-title').innerText = `Challenge ${currentCh.id}: ${currentCh.title}`;
+        document.getElementById('resume-subtitle').innerText = `${currWorld.title} • ${currentCh.instruction}`;
+      } else {
+        document.getElementById('resume-title').innerText = `Sign Quest Completed!`;
+        document.getElementById('resume-subtitle').innerText = `All 15 Challenges conquered with mastery.`;
+      }
+    }
+
+    function getChallengeById(id) {
+      for (const w of WORLDS_CONFIG) {
+        for (const c of w.challenges) {
+          if (c.id === id) return c;
+        }
+      }
+      return null;
+    }
+
+    /* ========================================================================
+       E. MAP ROADMAP RENDERING
+       ======================================================================== */
+    function renderMap() {
+      const container = document.getElementById('map-container');
+      container.innerHTML = '';
+
+      WORLDS_CONFIG.forEach((world) => {
+        const isWorldUnlocked = world.challenges.some(c => gameState.unlockedChallenges.includes(c.id));
+        const completedInWorld = world.challenges.filter(c => gameState.completedChallenges[c.id]).length;
+        const isWorldDone = completedInWorld === 3;
+
+        const worldCard = document.createElement('div');
+        worldCard.className = `glass-card p-6 md:p-8 rounded-3xl border transition-all duration-300 relative overflow-hidden ${
+          isWorldUnlocked ? 'border-white/10 opacity-100 shadow-xl' : 'border-white/5 opacity-50 grayscale select-none'
+        }`;
+
+        // Top decorative accent glow
+        worldCard.innerHTML = `
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6 pb-4 border-b border-white/5">
+            <div class="flex items-center space-x-4">
+              <div class="w-14 h-14 rounded-2xl flex items-center justify-center text-3xl shadow-lg" style="background: ${world.themeColor}22; border: 1px solid ${world.themeColor}44;">
+                ${world.icon}
+              </div>
+              <div>
+                <div class="flex items-center space-x-2">
+                  <h3 class="text-lg md:text-xl font-black font-display text-white tracking-tight">${world.title}</h3>
+                  ${isWorldDone ? '<span class="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[10px] font-bold">COMPLETED ✓</span>' : ''}
+                </div>
+                <p class="text-xs text-slate-400 mt-0.5">${world.description}</p>
+              </div>
+            </div>
+
+            <div class="flex items-center space-x-2 self-start sm:self-center">
+              <span class="text-xs font-mono font-bold px-3 py-1 rounded-xl bg-white/5 border border-white/5 text-slate-300">
+                ${completedInWorld} / 3 Challenges
+              </span>
+            </div>
+          </div>
+
+          <!-- Challenge Nodes Path -->
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-2">
+            ${world.challenges.map(ch => renderChallengeNodeHtml(ch)).join('')}
+          </div>
+        `;
+
+        container.appendChild(worldCard);
+      });
+    }
+
+    function renderChallengeNodeHtml(ch) {
+      const isUnlocked = gameState.unlockedChallenges.includes(ch.id);
+      const isCompleted = !!gameState.completedChallenges[ch.id];
+      const result = gameState.completedChallenges[ch.id] || {};
+      const starsCount = result.stars || 0;
+      const isBoss = ch.isBoss;
+
+      let statusBadge = '';
+      let borderStyle = 'border-white/10';
+      let bgStyle = 'bg-slate-900/60';
+      let icon = isBoss ? '👑' : `${ch.id}`;
+      let clickAction = isUnlocked ? `onclick="startChallenge(${ch.id})"` : '';
+
+      if (isCompleted) {
+        borderStyle = 'border-emerald-500/40';
+        bgStyle = 'bg-emerald-950/20 hover:bg-emerald-900/30';
+        statusBadge = `<div class="text-yellow-400 text-xs font-mono mt-1">${'⭐'.repeat(starsCount)}</div>`;
+      } else if (isUnlocked) {
+        borderStyle = isBoss ? 'border-amber-500/60 shadow-amber-500/20 shadow-lg' : 'border-brand-500/60 shadow-brand-500/20 shadow-lg';
+        bgStyle = isBoss ? 'bg-amber-950/30 hover:bg-amber-900/40 node-pulse' : 'bg-brand-950/30 hover:bg-brand-900/40 node-pulse';
+        statusBadge = `<span class="text-[10px] font-bold uppercase tracking-wider text-brand-400 mt-1 inline-block">Ready</span>`;
+      } else {
+        borderStyle = 'border-white/5 opacity-40 cursor-not-allowed';
+        bgStyle = 'bg-slate-950/40';
+        icon = '🔒';
+        statusBadge = `<span class="text-[10px] font-medium text-slate-500 mt-1 inline-block">Locked</span>`;
+      }
+
+      return `
+        <div ${clickAction} class="p-4 rounded-2xl border ${borderStyle} ${bgStyle} transition-all duration-300 text-center flex flex-col items-center justify-between min-h-[140px] group cursor-pointer">
+          <div class="w-12 h-12 rounded-2xl flex items-center justify-center font-display font-black text-base shadow-inner ${
+            isCompleted ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' : 
+            isUnlocked ? (isBoss ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 text-xl' : 'bg-brand-500/20 text-brand-300 border border-brand-500/40') : 
+            'bg-slate-800/40 text-slate-500'
+          }">
+            ${icon}
+          </div>
+
+          <div class="mt-2">
+            <h4 class="text-xs font-bold text-white group-hover:text-brand-300 transition-colors line-clamp-1">${ch.title}</h4>
+            ${statusBadge}
+          </div>
+
+          <div class="text-[10px] font-mono text-slate-400 mt-1">
+            +${ch.xp} XP
+          </div>
+        </div>
+      `;
+    }
+
+    /* ========================================================================
+       F. ACTIVE CHALLENGE CONTROLLER & MINI-GAME ENGINES
+       ======================================================================== */
+    let activeChallenge = null;
+    let challengeAttemptCount = 1;
+    let challengeStartTime = 0;
+    let memoryFlippedCards = [];
+    let memoryMatchedPairs = 0;
+    let matchingSelectedWord = null;
+    let matchingPairsSolved = 0;
+    let sequenceUserOrder = [];
+    let bossCurrentStepIndex = 0;
+
+    function resumeCurrentChallenge() {
+      startChallenge(gameState.currentChallengeId || 1);
+    }
+
+    function startChallenge(id) {
+      const ch = getChallengeById(id);
+      if (!ch) return;
+
+      activeChallenge = ch;
+      challengeAttemptCount = 1;
+      challengeStartTime = Date.now();
+      gameState.currentChallengeId = id;
+      saveState();
+
+      // Setup UI Modals
+      const modal = document.getElementById('challenge-modal');
+      const card = document.getElementById('challenge-card');
+      modal.classList.remove('hidden');
+      setTimeout(() => {
+        card.classList.remove('scale-95', 'opacity-0');
+        card.classList.add('scale-100', 'opacity-100');
+      }, 10);
+
+      document.getElementById('modal-type-badge').innerText = getChallengeTypeName(ch.type);
+      document.getElementById('modal-world-badge').innerText = `World ${ch.worldId}`;
+      document.getElementById('challenge-instruction').innerText = ch.instruction;
+      document.getElementById('challenge-hint').innerText = ch.scenario || "Select or assemble the correct sign answer.";
+      document.getElementById('feedback-banner').classList.add('hidden');
+
+      // Speed Challenge Timer (If applicable, e.g. for speed challenges)
+      const timerWrap = document.getElementById('challenge-timer-wrap');
+      if (ch.type === 1 || ch.type === 2) {
+        timerWrap.classList.remove('hidden');
+        document.getElementById('challenge-timer-val').innerText = '15s';
+      } else {
+        timerWrap.classList.add('hidden');
+      }
+
+      // Render the specific Mini-Game Type
+      renderGameArena();
+    }
+
+    function getChallengeTypeName(type) {
+      switch(type) {
+        case 1: return "Type 1: What sign is this?";
+        case 2: return "Type 2: Find the correct sign";
+        case 3: return "Type 3: Match the signs";
+        case 4: return "Type 4: Memory Cards";
+        case 5: return "Type 5: Sign Sequence";
+        case 6: return "Type 6: Sentence Challenge";
+        case 7: return "👑 Final Boss Challenge";
+        default: return "Sign Challenge";
+      }
+    }
+
+    function renderGameArena() {
+      const arena = document.getElementById('game-arena');
+      arena.innerHTML = '';
+      const ch = activeChallenge;
+
+      if (ch.type === 1) {
+        // ==========================================
+        // GAME TYPE 1: WHAT SIGN IS THIS?
+        // ==========================================
+        arena.innerHTML = `
+          <div class="w-full space-y-6 flex flex-col items-center">
+            <!-- Video Frame -->
+            <div class="w-full max-w-sm aspect-video rounded-2xl overflow-hidden border border-white/10 shadow-2xl bg-black relative">
+              <video src="${ch.videoUrl}" autoplay loop muted playsinline class="w-full h-full object-contain"></video>
+              <div class="absolute bottom-2 right-2 px-2 py-0.5 rounded bg-black/60 backdrop-blur text-[10px] font-mono text-slate-300">
+                Looping Sign
+              </div>
+            </div>
+
+            <!-- 4 Options Grid -->
+            <div class="grid grid-cols-2 gap-3 w-full max-w-md">
+              ${ch.options.map((opt, i) => `
+                <button onclick="submitType1Answer('${opt}')" class="py-3 px-4 rounded-xl bg-white/5 hover:bg-brand-500/20 border border-white/10 hover:border-brand-500/40 text-sm font-bold text-white transition-all transform hover:-translate-y-0.5 active:translate-y-0">
+                  ${opt}
+                </button>
+              `).join('')}
+            </div>
+          </div>
+        `;
+      } else if (ch.type === 2) {
+        // ==========================================
+        // GAME TYPE 2: FIND THE CORRECT SIGN
+        // ==========================================
+        arena.innerHTML = `
+          <div class="w-full space-y-4">
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+              ${ch.cards.map((card, idx) => `
+                <div onclick="submitType2Answer(${idx})" class="group cursor-pointer rounded-2xl border border-white/10 bg-slate-900/60 hover:bg-brand-950/40 hover:border-brand-500/40 p-2 text-center transition-all transform hover:-translate-y-1">
+                  <div class="aspect-video rounded-xl overflow-hidden bg-black mb-2 border border-white/5">
+                    <video src="${card.videoUrl}" autoplay loop muted playsinline class="w-full h-full object-contain"></video>
+                  </div>
+                  <span class="text-xs font-bold text-slate-300 group-hover:text-white">${card.label}</span>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+        `;
+      } else if (ch.type === 3) {
+        // ==========================================
+        // GAME TYPE 3: MATCH THE SIGNS
+        // ==========================================
+        matchingSelectedWord = null;
+        matchingPairsSolved = 0;
+        arena.innerHTML = `
+          <div class="w-full max-w-xl space-y-4">
+            <p class="text-xs text-center text-slate-400">Click a word on the left, then click its corresponding sign on the right!</p>
+            <div class="grid grid-cols-2 gap-6">
+              <!-- Words Column -->
+              <div class="space-y-3" id="match-words-col">
+                ${ch.items.map((it, idx) => `
+                  <button id="match-word-${idx}" onclick="selectMatchingWord(${idx})" class="w-full py-4 px-4 rounded-2xl bg-white/5 hover:bg-white/10 border border-white/10 text-sm font-bold text-white text-left transition-all flex items-center justify-between">
+                    <span>${it.word}</span>
+                    <span id="match-check-${idx}" class="text-emerald-400 hidden">✓</span>
+                  </button>
+                `).join('')}
+              </div>
+
+              <!-- Signs Video Column -->
+              <div class="space-y-3" id="match-signs-col">
+                ${ch.items.map((it, idx) => `
+                  <div id="match-sign-${idx}" onclick="selectMatchingSign(${idx})" class="cursor-pointer p-2 rounded-2xl bg-white/5 hover:bg-white/10 border border-white/10 transition-all flex items-center space-x-3">
+                    <div class="w-20 aspect-video rounded-lg overflow-hidden bg-black flex-shrink-0">
+                      <video src="${it.videoUrl}" autoplay loop muted playsinline class="w-full h-full object-contain"></video>
+                    </div>
+                    <span class="text-xs font-medium text-slate-300">Sign Gesture</span>
+                  </div>
+                `).join('')}
+              </div>
+            </div>
+          </div>
+        `;
+      } else if (ch.type === 4) {
+        // ==========================================
+        // GAME TYPE 4: MEMORY CARDS
+        // ==========================================
+        memoryFlippedCards = [];
+        memoryMatchedPairs = 0;
+        // Generate paired deck
+        const deck = [];
+        ch.pairs.forEach(p => {
+          deck.push({ pairId: p.id, kind: 'word', content: p.word });
+          deck.push({ pairId: p.id, kind: 'video', content: p.videoUrl });
+        });
+        // Shuffle deck
+        deck.sort(() => Math.random() - 0.5);
+
+        arena.innerHTML = `
+          <div class="w-full max-w-lg space-y-4">
+            <div class="grid grid-cols-3 gap-3" id="memory-grid">
+              ${deck.map((card, idx) => `
+                <div id="mem-card-${idx}" onclick="flipMemoryCard(${idx}, '${card.pairId}', '${card.kind}', '${card.content}')" class="card-flip aspect-[3/4] cursor-pointer">
+                  <div class="card-flip-inner w-full h-full relative rounded-2xl shadow-lg border border-white/10">
+                    <!-- Face Down -->
+                    <div class="card-front absolute inset-0 w-full h-full bg-slate-900 flex flex-col items-center justify-center rounded-2xl border border-white/10 text-2xl font-bold text-slate-500">
+                      ?
+                    </div>
+                    <!-- Face Up -->
+                    <div class="card-back absolute inset-0 w-full h-full bg-slate-800 p-2 flex flex-col items-center justify-center rounded-2xl border border-brand-500/50 overflow-hidden">
+                      ${card.kind === 'word' ? 
+                        `<span class="text-lg font-black text-white font-display">${card.content}</span>` : 
+                        `<video src="${card.content}" autoplay loop muted playsinline class="w-full h-full object-contain rounded-lg"></video>`}
+                    </div>
+                  </div>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+        `;
+      } else if (ch.type === 5) {
+        // ==========================================
+        // GAME TYPE 5: SIGN SEQUENCE
+        // ==========================================
+        sequenceUserOrder = [];
+        const shuffled = [...ch.sequenceItems].sort(() => Math.random() - 0.5);
+
+        arena.innerHTML = `
+          <div class="w-full max-w-xl space-y-6">
+            <div class="text-center font-mono font-bold text-brand-300 text-sm bg-brand-500/10 py-2 px-4 rounded-xl border border-brand-500/20">
+              TARGET: ${ch.targetSentence}
+            </div>
+
+            <!-- Assembly Sequence Slots -->
+            <div class="space-y-2">
+              <span class="text-xs font-bold text-slate-400 uppercase tracking-widest block text-center">Your Assembly Sequence:</span>
+              <div id="sequence-slots" class="grid grid-cols-3 gap-3 min-h-[90px] p-3 rounded-2xl bg-slate-950/60 border border-dashed border-white/20">
+                <div class="text-center text-xs text-slate-600 flex items-center justify-center col-span-3">
+                  Tap sign cards below in order to place them here
+                </div>
+              </div>
+            </div>
+
+            <!-- Available Shuffled Sign Cards -->
+            <div class="space-y-2">
+              <span class="text-xs font-bold text-slate-400 uppercase tracking-widest block text-center">Available Signs:</span>
+              <div class="grid grid-cols-3 gap-3" id="sequence-bank">
+                ${shuffled.map((item) => `
+                  <div id="bank-item-${item.id}" onclick="addSequenceItem('${item.id}', '${item.word}', '${item.videoUrl}', ${item.correctOrder})" class="cursor-pointer p-2 rounded-xl bg-white/5 hover:bg-brand-500/20 border border-white/10 hover:border-brand-500/40 text-center transition-all transform hover:-translate-y-1">
+                    <div class="aspect-video rounded-lg overflow-hidden bg-black mb-1">
+                      <video src="${item.videoUrl}" autoplay loop muted playsinline class="w-full h-full object-contain"></video>
+                    </div>
+                    <span class="text-xs font-bold text-slate-200">${item.word}</span>
+                  </div>
+                `).join('')}
+              </div>
+            </div>
+
+            <div class="flex items-center justify-center gap-3">
+              <button onclick="resetSequenceTray()" class="px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-xs font-bold text-slate-400 border border-white/5">
+                Clear Order
+              </button>
+              <button onclick="checkSequenceAnswer()" class="px-6 py-2.5 rounded-xl bg-gradient-to-r from-brand-500 to-indigo-600 text-white text-xs font-bold uppercase tracking-wider shadow-lg shadow-brand-500/20">
+                Verify Sequence ✓
+              </button>
+            </div>
+          </div>
+        `;
+      } else if (ch.type === 6) {
+        // ==========================================
+        // GAME TYPE 6: SENTENCE CHALLENGE
+        // ==========================================
+        arena.innerHTML = `
+          <div class="w-full max-w-lg space-y-6">
+            <!-- Scenario Card -->
+            <div class="p-4 rounded-2xl bg-cyan-950/30 border border-cyan-500/30 text-xs text-cyan-200 space-y-1">
+              <span class="font-bold uppercase tracking-wider text-cyan-400 block">Communication Scenario</span>
+              <p>${ch.scenario}</p>
+            </div>
+
+            <!-- Demonstration Video Previews -->
+            <div class="flex items-center justify-center space-x-2">
+              ${ch.demonstrationVideos.map(url => `
+                <div class="w-24 aspect-video rounded-xl overflow-hidden border border-white/10 bg-black shadow-md">
+                  <video src="${url}" autoplay loop muted playsinline class="w-full h-full object-contain"></video>
+                </div>
+              `).join('')}
+            </div>
+
+            <!-- Sequence Options -->
+            <div class="space-y-2.5">
+              ${ch.options.map(opt => `
+                <button onclick="submitType6Answer('${opt}')" class="w-full py-3.5 px-4 rounded-xl bg-white/5 hover:bg-cyan-500/20 border border-white/10 hover:border-cyan-500/40 text-xs font-bold font-mono text-white text-left transition-all flex items-center justify-between">
+                  <span>${opt}</span>
+                  <span class="text-xs text-slate-500">Select →</span>
+                </button>
+              `).join('')}
+            </div>
+          </div>
+        `;
+      } else if (ch.type === 7) {
+        // ==========================================
+        // GAME TYPE 7: BOSS CHALLENGE (Communication Castle)
+        // ==========================================
+        bossCurrentStepIndex = 0;
+        renderBossStep();
+      }
+    }
+
+    /* ------------------------------------------------------------------------
+       F1. Handlers for Type 1 & Type 2
+       ------------------------------------------------------------------------ */
+    function submitType1Answer(selected) {
+      const isCorrect = (selected.toLowerCase() === activeChallenge.correctAnswer.toLowerCase());
+      evaluateAnswerResult(isCorrect, selected, activeChallenge.correctAnswer);
+    }
+
+    function submitType2Answer(idx) {
+      const card = activeChallenge.cards[idx];
+      const isCorrect = card.isCorrect;
+      evaluateAnswerResult(isCorrect, card.label, activeChallenge.targetWord);
+    }
+
+    /* ------------------------------------------------------------------------
+       F2. Handlers for Type 3: Match the Signs
+       ------------------------------------------------------------------------ */
+    function selectMatchingWord(idx) {
+      matchingSelectedWord = idx;
+      // Highlight selected word
+      activeChallenge.items.forEach((_, i) => {
+        const btn = document.getElementById(`match-word-${i}`);
+        if (i === idx) {
+          btn.classList.add('border-brand-500', 'bg-brand-500/20');
+        } else {
+          btn.classList.remove('border-brand-500', 'bg-brand-500/20');
+        }
+      });
+    }
+
+    function selectMatchingSign(idx) {
+      if (matchingSelectedWord === null) return;
+      if (matchingSelectedWord === idx) {
+        // Correct pair!
+        playSound('correct');
+        document.getElementById(`match-check-${idx}`).classList.remove('hidden');
+        document.getElementById(`match-word-${idx}`).classList.add('border-emerald-500', 'bg-emerald-950/30', 'pointer-events-none');
+        document.getElementById(`match-sign-${idx}`).classList.add('border-emerald-500', 'bg-emerald-950/30', 'pointer-events-none');
+        matchingPairsSolved++;
+        matchingSelectedWord = null;
+
+        if (matchingPairsSolved === activeChallenge.items.length) {
+          evaluateAnswerResult(true, "All pairs matched", "All pairs matched");
+        }
+      } else {
+        // Wrong match
+        playSound('wrong');
+        deductHeart();
+        const wrongSign = document.getElementById(`match-sign-${idx}`);
+        wrongSign.classList.add('border-rose-500');
+        setTimeout(() => wrongSign.classList.remove('border-rose-500'), 500);
+      }
+    }
+
+    /* ------------------------------------------------------------------------
+       F3. Handlers for Type 4: Memory Cards
+       ------------------------------------------------------------------------ */
+    function flipMemoryCard(idx, pairId, kind, content) {
+      const el = document.getElementById(`mem-card-${idx}`);
+      if (el.classList.contains('flipped') || memoryFlippedCards.length >= 2) return;
+
+      el.classList.add('flipped');
+      memoryFlippedCards.push({ idx, pairId, el });
+
+      if (memoryFlippedCards.length === 2) {
+        const [c1, c2] = memoryFlippedCards;
+        if (c1.pairId === c2.pairId) {
+          // Matched!
+          playSound('correct');
+          memoryMatchedPairs++;
+          c1.el.classList.add('pointer-events-none');
+          c2.el.classList.add('pointer-events-none');
+          memoryFlippedCards = [];
+
+          if (memoryMatchedPairs === activeChallenge.pairs.length) {
+            setTimeout(() => {
+              evaluateAnswerResult(true, "All memory cards matched", "All memory cards matched");
+            }, 500);
+          }
+        } else {
+          // Not matched!
+          playSound('wrong');
+          setTimeout(() => {
+            c1.el.classList.remove('flipped');
+            c2.el.classList.remove('flipped');
+            memoryFlippedCards = [];
+          }, 900);
+        }
+      }
+    }
+
+    /* ------------------------------------------------------------------------
+       F4. Handlers for Type 5: Sign Sequence
+       ------------------------------------------------------------------------ */
+    function addSequenceItem(id, word, videoUrl, correctOrder) {
+      if (sequenceUserOrder.some(x => x.id === id)) return;
+      sequenceUserOrder.push({ id, word, videoUrl, correctOrder });
+      document.getElementById(`bank-item-${id}`).classList.add('opacity-30', 'pointer-events-none');
+      renderSequenceSlots();
+    }
+
+    function renderSequenceSlots() {
+      const slots = document.getElementById('sequence-slots');
+      if (sequenceUserOrder.length === 0) {
+        slots.innerHTML = `<div class="text-center text-xs text-slate-600 flex items-center justify-center col-span-3">Tap sign cards below in order to place them here</div>`;
+        return;
+      }
+      slots.innerHTML = sequenceUserOrder.map((it, idx) => `
+        <div class="p-2 rounded-xl bg-brand-500/20 border border-brand-500/40 text-center relative">
+          <span class="absolute top-1 left-2 text-[10px] font-mono text-brand-300 font-bold">${idx + 1}</span>
+          <div class="aspect-video rounded overflow-hidden bg-black mb-1">
+            <video src="${it.videoUrl}" autoplay loop muted playsinline class="w-full h-full object-contain"></video>
+          </div>
+          <span class="text-xs font-bold text-white">${it.word}</span>
+        </div>
+      `).join('');
+    }
+
+    function resetSequenceTray() {
+      sequenceUserOrder = [];
+      activeChallenge.sequenceItems.forEach(it => {
+        const el = document.getElementById(`bank-item-${it.id}`);
+        if (el) el.classList.remove('opacity-30', 'pointer-events-none');
+      });
+      renderSequenceSlots();
+    }
+
+    function checkSequenceAnswer() {
+      if (sequenceUserOrder.length !== activeChallenge.sequenceItems.length) {
+        alert("Please place all signs into the sequence before checking!");
+        return;
+      }
+      const isCorrect = sequenceUserOrder.every((it, idx) => it.correctOrder === idx);
+      const userStr = sequenceUserOrder.map(x => x.word).join(' → ');
+      evaluateAnswerResult(isCorrect, userStr, activeChallenge.targetSentence);
+    }
+
+    /* ------------------------------------------------------------------------
+       F5. Handlers for Type 6: Sentence Challenge
+       ------------------------------------------------------------------------ */
+    function submitType6Answer(selected) {
+      const isCorrect = (selected === activeChallenge.correctAnswer);
+      evaluateAnswerResult(isCorrect, selected, activeChallenge.correctAnswer);
+    }
+
+    /* ------------------------------------------------------------------------
+       F6. Handlers for Type 7: Boss Battle Multi-Phase
+       ------------------------------------------------------------------------ */
+    function renderBossStep() {
+      const arena = document.getElementById('game-arena');
+      const step = activeChallenge.subSteps[bossCurrentStepIndex];
+      arena.innerHTML = `
+        <div class="w-full max-w-lg space-y-4">
+          <div class="flex items-center justify-between text-xs font-bold text-amber-400 bg-amber-500/10 px-4 py-2 rounded-xl border border-amber-500/20">
+            <span>👑 Boss Phase ${step.stepNum} of 3</span>
+            <span>Target: Victory</span>
+          </div>
+          <h4 class="text-sm font-bold text-white text-center">${step.prompt}</h4>
+
+          ${step.videoUrl ? `
+            <div class="w-full max-w-xs mx-auto aspect-video rounded-2xl overflow-hidden bg-black border border-white/10 shadow-lg">
+              <video src="${step.videoUrl}" autoplay loop muted playsinline class="w-full h-full object-contain"></video>
+            </div>
+            <div class="grid grid-cols-2 gap-3 pt-2">
+              ${step.options.map(opt => `
+                <button onclick="submitBossPhaseAnswer('${opt}')" class="py-3 px-4 rounded-xl bg-white/5 hover:bg-amber-500/20 border border-white/10 hover:border-amber-500/40 text-xs font-bold text-white transition-all">
+                  ${opt}
+                </button>
+              `).join('')}
+            </div>
+          ` : (step.cards ? `
+            <div class="grid grid-cols-2 gap-3 pt-2">
+              ${step.cards.map((card, idx) => `
+                <div onclick="submitBossPhaseCard(${idx})" class="cursor-pointer p-2 rounded-xl bg-white/5 hover:bg-amber-500/20 border border-white/10 hover:border-amber-500/40 text-center transition-all">
+                  <div class="aspect-video rounded overflow-hidden bg-black mb-1">
+                    <video src="${card.videoUrl}" autoplay loop muted playsinline class="w-full h-full object-contain"></video>
+                  </div>
+                  <span class="text-xs font-bold text-slate-300">Sign ${card.label}</span>
+                </div>
+              `).join('')}
+            </div>
+          ` : `
+            <!-- Phase 3 Sequence -->
+            <div class="space-y-3">
+              <div class="grid grid-cols-3 gap-2" id="boss-seq-bank">
+                ${step.sequenceItems.map(item => `
+                  <div id="boss-bank-${item.id}" onclick="addBossSequence('${item.id}')" class="cursor-pointer p-2 rounded-xl bg-white/5 hover:bg-amber-500/20 border border-white/10 text-center">
+                    <div class="aspect-video rounded overflow-hidden bg-black mb-1">
+                      <video src="${item.videoUrl}" autoplay loop muted playsinline class="w-full h-full object-contain"></video>
+                    </div>
+                    <span class="text-xs font-bold text-white">${item.word}</span>
+                  </div>
+                `).join('')}
+              </div>
+              <button onclick="verifyBossPhase3()" class="w-full py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-yellow-600 font-bold text-xs text-slate-950 uppercase tracking-wider">
+                Seal Royal Decree ✓
+              </button>
+            </div>
+          `)}
+        </div>
+      `;
+    }
+
+    let bossSeqChosen = [];
+    function addBossSequence(id) {
+      if (!bossSeqChosen.includes(id)) {
+        bossSeqChosen.push(id);
+        const el = document.getElementById(`boss-bank-${id}`);
+        if (el) el.classList.add('border-emerald-500', 'bg-emerald-500/20');
+      }
+    }
+
+    function submitBossPhaseAnswer(selected) {
+      const step = activeChallenge.subSteps[bossCurrentStepIndex];
+      if (selected.toLowerCase() === step.correctAnswer.toLowerCase()) {
+        playSound('correct');
+        advanceBossPhase();
+      } else {
+        playSound('wrong');
+        deductHeart();
+      }
+    }
+
+    function submitBossPhaseCard(idx) {
+      const step = activeChallenge.subSteps[bossCurrentStepIndex];
+      if (step.cards[idx].isCorrect) {
+        playSound('correct');
+        advanceBossPhase();
+      } else {
+        playSound('wrong');
+        deductHeart();
+      }
+    }
+
+    function verifyBossPhase3() {
+      // Step 3
+      if (bossSeqChosen.length === 3) {
+        playSound('correct');
+        evaluateAnswerResult(true, "Royal Decree Sealed", "WELCOME WORLD SIGN");
+      } else {
+        playSound('wrong');
+        deductHeart();
+      }
+    }
+
+    function advanceBossPhase() {
+      bossCurrentStepIndex++;
+      if (bossCurrentStepIndex < activeChallenge.subSteps.length) {
+        renderBossStep();
+      } else {
+        evaluateAnswerResult(true, "Boss Defeated", "Boss Defeated");
+      }
+    }
+
+    /* ========================================================================
+       G. ANSWER EVALUATION, XP, STARS & FEEDBACK
+       ======================================================================== */
+    function deductHeart() {
+      gameState.hearts = Math.max(0, gameState.hearts - 1);
+      updateHud();
+      if (gameState.hearts === 0) {
+        document.getElementById('challenge-failed-modal').classList.remove('hidden');
+      }
+    }
+
+    function retryCurrentChallenge() {
+      gameState.hearts = 3;
+      updateHud();
+      document.getElementById('challenge-failed-modal').classList.add('hidden');
+      startChallenge(activeChallenge.id);
+    }
+
+    function evaluateAnswerResult(isCorrect, userAnswer, correctAnswer) {
+      const feedback = document.getElementById('feedback-banner');
+      const icon = document.getElementById('feedback-icon');
+      const title = document.getElementById('feedback-title');
+      const desc = document.getElementById('feedback-desc');
+      const btn = document.getElementById('feedback-btn');
+
+      feedback.classList.remove('hidden');
+
+      if (isCorrect) {
+        playSound('correct');
+        // Calculate awarded XP
+        let awardedXp = activeChallenge.xp || 100;
+        if (challengeAttemptCount === 2) awardedXp = Math.round(awardedXp * 0.6);
+        else if (challengeAttemptCount >= 3) awardedXp = Math.round(awardedXp * 0.3);
+
+        // Speed bonus if answered in < 8s
+        const elapsed = (Date.now() - challengeStartTime) / 1000;
+        if (elapsed < 8) awardedXp += 20;
+
+        gameState.totalXp += awardedXp;
+
+        // Determine Stars (1 to 3)
+        let stars = 3;
+        if (challengeAttemptCount === 2) stars = 2;
+        else if (challengeAttemptCount >= 3) stars = 1;
+
+        gameState.completedChallenges[activeChallenge.id] = {
+          stars,
+          score: awardedXp,
+          completedAt: Date.now()
+        };
+
+        // Unlock next challenge
+        const nextId = activeChallenge.id + 1;
+        if (nextId <= 15 && !gameState.unlockedChallenges.includes(nextId)) {
+          gameState.unlockedChallenges.push(nextId);
+          gameState.currentChallengeId = nextId;
+        }
+
+        saveState();
+        updateHud();
+
+        // Banner Styling
+        feedback.className = "p-4 rounded-2xl border border-emerald-500/40 bg-emerald-950/40 flex flex-col md:flex-row items-center justify-between gap-4";
+        icon.className = "w-10 h-10 rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center justify-center text-xl font-bold";
+        icon.innerText = "✓";
+        title.innerText = "CORRECT!";
+        title.className = "text-sm font-black text-emerald-300 uppercase tracking-wider";
+        desc.innerText = `Outstanding! +${awardedXp} XP • Awarded ${'⭐'.repeat(stars)}`;
+        btn.className = "px-6 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-bold text-xs uppercase tracking-wider shadow-lg shadow-emerald-500/25";
+        btn.innerText = "Continue →";
+      } else {
+        playSound('wrong');
+        challengeAttemptCount++;
+        deductHeart();
+
+        // Log mistake for review
+        gameState.mistakes.push({
+          question: activeChallenge.instruction,
+          videoUrl: activeChallenge.videoUrl || (activeChallenge.cards ? activeChallenge.cards[0].videoUrl : null),
+          userAnswer: String(userAnswer),
+          correctAnswer: String(correctAnswer),
+          explanation: activeChallenge.explanation || "Review the sign handshape and motion."
+        });
+        saveState();
+        updateHud();
+
+        // Banner Styling
+        feedback.className = "p-4 rounded-2xl border border-rose-500/40 bg-rose-950/40 flex flex-col md:flex-row items-center justify-between gap-4";
+        icon.className = "w-10 h-10 rounded-xl bg-rose-500/20 text-rose-400 border border-rose-500/30 flex items-center justify-center text-xl font-bold";
+        icon.innerText = "✕";
+        title.innerText = "NOT QUITE";
+        title.className = "text-sm font-black text-rose-300 uppercase tracking-wider";
+        desc.innerText = `Explanation: ${activeChallenge.explanation}`;
+        btn.className = "px-6 py-2.5 rounded-xl bg-rose-500 hover:bg-rose-600 text-white font-bold text-xs uppercase tracking-wider shadow-lg shadow-rose-500/25";
+        btn.innerText = "Try Again";
+      }
+    }
+
+    function handleFeedbackContinue() {
+      const feedback = document.getElementById('feedback-banner');
+      const isCorrect = feedback.classList.contains('border-emerald-500/40');
+
+      if (!isCorrect) {
+        // Retry current challenge
+        feedback.classList.add('hidden');
+        renderGameArena();
+        return;
+      }
+
+      // Check if world is completed (Challenge 3, 6, 9, 12, 15)
+      const finishedId = activeChallenge.id;
+      closeChallengeModal();
+
+      if (finishedId === 15) {
+        // GRAND VICTORY!
+        openFinalVictoryModal();
+      } else if (finishedId % 3 === 0) {
+        // World completion modal!
+        const worldId = finishedId / 3;
+        const world = WORLDS_CONFIG.find(w => w.id === worldId);
+        openWorldCompleteModal(world);
+      } else {
+        renderMap();
+      }
+    }
+
+    function closeChallengeModal() {
+      const modal = document.getElementById('challenge-modal');
+      const card = document.getElementById('challenge-card');
+      card.classList.remove('scale-100', 'opacity-100');
+      card.classList.add('scale-95', 'opacity-0');
+      setTimeout(() => {
+        modal.classList.add('hidden');
+        renderMap();
+      }, 200);
+    }
+
+    /* ========================================================================
+       H. CELEBRATION & COMPLETION MODALS
+       ======================================================================== */
+    function openWorldCompleteModal(world) {
+      playSound('fanfare');
+      document.getElementById('world-complete-name').innerText = `${world.title} Completed!`;
+      document.getElementById('world-complete-modal').classList.remove('hidden');
+    }
+
+    function closeWorldCompleteModal() {
+      document.getElementById('world-complete-modal').classList.add('hidden');
+      renderMap();
+    }
+
+    function openFinalVictoryModal() {
+      playSound('fanfare');
+      const modal = document.getElementById('final-victory-modal');
+      document.getElementById('final-xp-stat').innerText = gameState.totalXp.toLocaleString();
+      let totalStars = 0;
+      Object.values(gameState.completedChallenges).forEach(c => totalStars += (c.stars || 0));
+      document.getElementById('final-stars-stat').innerText = `${totalStars} / 45`;
+      const acc = Math.max(75, Math.round(100 - (gameState.mistakes.length * 2.5)));
+      document.getElementById('final-accuracy-stat').innerText = `${acc}%`;
+      modal.classList.remove('hidden');
+    }
+
+    function restartSignQuest() {
+      document.getElementById('final-victory-modal').classList.add('hidden');
+      resetGameState();
+    }
+
+    function confirmResetProgress() {
+      if (confirm("Reset all Sign Quest progress and start fresh from World 1?")) {
+        resetGameState();
+      }
+    }
+
+    /* ========================================================================
+       I. MISTAKE REVIEW SYSTEM
+       ======================================================================== */
+    function openMistakeReview() {
+      const modal = document.getElementById('mistake-review-modal');
+      const list = document.getElementById('mistakes-list');
+      list.innerHTML = '';
+
+      if (gameState.mistakes.length === 0) {
+        list.innerHTML = `
+          <div class="text-center py-12 space-y-2">
+            <span class="text-4xl">🌟</span>
+            <h4 class="text-base font-bold text-white">No Mistakes Recorded!</h4>
+            <p class="text-xs text-slate-400">You have completed challenges with flawless accuracy.</p>
+          </div>
+        `;
+      } else {
+        gameState.mistakes.forEach((m, idx) => {
+          const item = document.createElement('div');
+          item.className = "p-4 rounded-2xl bg-white/5 border border-white/5 space-y-2 text-xs";
+          item.innerHTML = `
+            <div class="flex items-center justify-between text-slate-400 font-mono text-[10px]">
+              <span>MISTAKE #${idx + 1}</span>
+              <span class="text-rose-400 font-bold">Needs Practice</span>
+            </div>
+            <p class="font-bold text-white text-sm">${m.question}</p>
+            <div class="grid grid-cols-2 gap-2 text-slate-300">
+              <div class="p-2 rounded-lg bg-rose-950/20 border border-rose-500/20">
+                <span class="text-[10px] text-rose-400 font-bold block uppercase">Your Selection:</span>
+                <span class="text-slate-200">${m.userAnswer}</span>
+              </div>
+              <div class="p-2 rounded-lg bg-emerald-950/20 border border-emerald-500/20">
+                <span class="text-[10px] text-emerald-400 font-bold block uppercase">Correct Answer:</span>
+                <span class="text-white font-bold">${m.correctAnswer}</span>
+              </div>
+            </div>
+            <p class="text-slate-400 text-[11px] italic bg-black/20 p-2 rounded-lg">${m.explanation}</p>
+          `;
+          list.appendChild(item);
+        });
+      }
+
+      modal.classList.remove('hidden');
+    }
+
+    function closeMistakeReview() {
+      document.getElementById('mistake-review-modal').classList.add('hidden');
+    }
+
+    /* ========================================================================
+       J. INITIALIZATION
+       ======================================================================== */
+    window.addEventListener('DOMContentLoaded', () => {
+      loadState();
+      updateHud();
+      renderMap();
+    });
+  </script>
+</body>
+</html>

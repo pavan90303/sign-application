@@ -1,0 +1,11 @@
+{
+  "feature_dim": 86,
+  "num_classes": 26,
+  "architecture": "ISLAlphabetMLP",
+  "pytorch_weights": "isl_alphabet_model.pt",
+  "rf_model": "isl_alphabet_rf.joblib",
+  "device": "cpu",
+  "best_val_accuracy": 0.5614814814814815,
+  "test_accuracy": 0.5382716049382716,
+  "rf_test_accuracy": 0.494320987654321
+}

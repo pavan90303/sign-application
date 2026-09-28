@@ -28,11 +28,13 @@ staticfiles/
 *.log
 
 # ===========================
-# Environment Variables
+# Environment Variables & Secrets
 # ===========================
 .env
 .env.local
 .env.production
+*.pem
+*.key
 
 # ===========================
 # IDE / Editor
@@ -51,6 +53,23 @@ Thumbs.db
 desktop.ini
 
 # ===========================
+# Large Models (> 100MB GitHub limit)
+# ===========================
+*isl_alphabet_rf.joblib
+
+# ===========================
+# Scratch & Temporary Test Files
+# ===========================
+scratch/
+valid_*.mp4
+test_*.mp4
+test_output*.txt
+server_log*.txt
+debug_error.log
+error.log
+train_sign_recognizer.py
+
+# ===========================
 # NLTK Data (downloaded)
 # ===========================
 nltk_data/
@@ -61,9 +80,7 @@ nltk_data/
 stitch_*.html
 
 # ===========================
-# Debug / Test Artifacts
+# Preserve Production Sign Assets
 # ===========================
-test_output*.txt
-server_log*.txt
-debug_error.log
-error.log
+!assets/*.mp4
+!assets/signs/*.mp4

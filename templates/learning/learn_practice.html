@@ -1,0 +1,1086 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Practice Zone • {{ section.title }} • SignAI Pro{% endblock %}
+
+{% block page_title %}Practice Zone{% endblock %}
+{% block page_subtitle %}{{ section.title }} • Real-time AI sign practice & recognition{% endblock %}
+
+{% block header_content %}
+<div class="flex items-center space-x-2 text-xs font-semibold text-slate-400">
+    <a href="{% url 'learn_dashboard' %}" class="hover:text-primary transition-colors flex items-center">
+        <span class="material-icons-round text-sm mr-1">school</span> Course
+    </a>
+    <span class="text-slate-600">/</span>
+    <a href="{% url 'learn_section' section.id %}" class="hover:text-primary transition-colors">{{ section.title }}</a>
+    <span class="text-slate-600">/</span>
+    <span class="text-primary font-medium">Practice Zone</span>
+</div>
+{% endblock %}
+
+{% block content %}
+<!-- MediaPipe Hands SDK (Pinned stable release for reliable landmark tracking) -->
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/hands.js" crossorigin="anonymous"></script>
+
+<div class="max-w-6xl mx-auto space-y-6">
+
+    <!-- Top Sign Selector & Lookup Bar -->
+    <div class="glass-panel p-6 rounded-3xl border border-white/10 shadow-2xl space-y-4">
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div>
+                <span class="text-[11px] font-bold text-primary uppercase tracking-widest block mb-1">Section {{ section.section_number }} Practice</span>
+                <h2 class="text-2xl font-black text-white flex items-center tracking-tight">
+                    <span class="material-icons-round text-primary mr-2.5 text-2xl">pan_tool</span>
+                    Practice Signs from {{ section.title }}
+                </h2>
+                <p class="text-xs text-slate-400 mt-1">Enter any sign from this section or click a quick sign below to load the verified animation and practice live.</p>
+            </div>
+
+            <!-- Text Input Lookup -->
+            <div class="w-full md:w-auto min-w-[340px]">
+                <label class="block text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-1.5">Enter a sign to practice:</label>
+                <div class="flex items-center space-x-2">
+                    <div class="relative flex-1">
+                        <span class="material-icons-round absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-lg">search</span>
+                        <input type="text" id="sign-input-query" 
+                               value="{% if initial_lesson %}{{ initial_lesson.word_or_phrase }}{% else %}HELLO{% endif %}"
+                               placeholder="e.g. HELLO, HELP, THANK YOU..."
+                               autocomplete="off"
+                               class="w-full pl-10 pr-4 py-2.5 rounded-xl bg-white/5 border border-white/15 text-white placeholder-slate-500 text-sm font-semibold uppercase focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all"
+                               onkeydown="if(event.key === 'Enter') handleLookupSign()">
+                    </div>
+                    <button onclick="handleLookupSign()" id="load-sign-btn" 
+                            class="px-5 py-2.5 rounded-xl bg-primary hover:bg-primary/90 text-white text-xs font-bold shadow-lg shadow-primary/25 transition-all flex items-center">
+                        <span class="material-icons-round text-sm mr-1">download</span> Load Sign
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Section Validation Warning Banner (Requirement 4 & 25) -->
+        <div id="section-warning-banner" class="hidden p-4 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-xs text-amber-300 space-y-2">
+            <div class="flex items-start space-x-2">
+                <span class="material-icons-round text-amber-400 text-base flex-shrink-0 mt-0.5">warning</span>
+                <div>
+                    <strong id="warning-title" class="font-bold block">Sign Not in Current Section</strong>
+                    <p id="warning-message" class="text-slate-300 text-xs mt-0.5 leading-relaxed"></p>
+                </div>
+            </div>
+            <div id="suggested-signs-row" class="pt-1 flex flex-wrap items-center gap-1.5">
+                <span class="text-[10px] uppercase font-bold text-slate-400 mr-1">Available in Section {{ section.section_number }}:</span>
+                <!-- Pills populated via JS -->
+            </div>
+        </div>
+
+        <!-- Recognition Availability Info Banner -->
+        <div id="unsupported-recognition-banner" class="hidden p-3 rounded-xl bg-blue-500/10 border border-blue-500/20 text-xs text-blue-300 flex items-center space-x-2">
+            <span class="material-icons-round text-blue-400 text-base">info</span>
+            <span>Automatic recognition is not available for this sign yet. You can still use the reference video on the left for self-guided practice!</span>
+        </div>
+
+        <!-- Quick Sign Pills -->
+        <div class="border-t border-white/5 pt-3">
+            <div class="flex items-center justify-between mb-2">
+                <p class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Available Signs in {{ section.title }}:</p>
+                <span class="text-[11px] text-emerald-400 font-medium flex items-center">
+                    <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 mr-1.5"></span>
+                    {{ supported_signs_count }} signs trained for recognition
+                </span>
+            </div>
+            <div class="flex flex-wrap gap-2 max-h-24 overflow-y-auto custom-scrollbar pr-1" id="section-pills-container">
+                {% for l in lessons %}
+                <button onclick="loadSignDirectly({{ l.id }}, '{{ l.word_or_phrase|escapejs }}', '{% if l.video_url %}{{ l.video_url }}{% endif %}', '{{ l.explanation|escapejs }}', {{ l.is_supported|yesno:'true,false' }})" 
+                        id="pill-lesson-{{ l.id }}"
+                        data-word="{{ l.word_or_phrase|lower }}"
+                        class="sign-pill px-3 py-1.5 rounded-xl text-xs font-semibold border transition-all flex items-center space-x-1.5 {% if initial_lesson and initial_lesson.id == l.id %}bg-primary text-white border-primary shadow-md shadow-primary/25{% else %}bg-white/5 hover:bg-white/10 text-slate-300 border-white/5{% endif %}">
+                    <span>{{ l.word_or_phrase }}</span>
+                    {% if l.is_supported %}
+                    <span class="w-1.5 h-1.5 rounded-full bg-emerald-400" title="Trained for recognition"></span>
+                    {% endif %}
+                </button>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Side-by-Side Arena (Requirement 3) -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 items-stretch">
+        
+        <!-- LEFT: Expected Sign Reference -->
+        <div class="glass-panel p-6 rounded-3xl border border-white/10 flex flex-col justify-between shadow-2xl relative overflow-hidden">
+            <div>
+                <div class="flex items-center justify-between mb-4">
+                    <div class="flex items-center space-x-2.5">
+                        <span class="w-9 h-9 rounded-xl bg-primary/20 text-primary flex items-center justify-center shadow-inner">
+                            <span class="material-icons-round text-xl">play_circle_filled</span>
+                        </span>
+                        <div>
+                            <span class="text-[10px] font-bold text-primary uppercase tracking-widest block">Expected Sign</span>
+                            <h3 id="display-expected-title" class="text-xl font-black text-white leading-tight uppercase tracking-tight">
+                                {% if initial_lesson %}{{ initial_lesson.word_or_phrase }}{% else %}HELLO{% endif %}
+                            </h3>
+                        </div>
+                    </div>
+
+                    <button onclick="replayExpectedVideo()" class="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 border border-white/5 transition-all flex items-center text-xs font-semibold" title="Replay Animation">
+                        <span class="material-icons-round text-base mr-1">replay</span> Replay
+                    </button>
+                </div>
+
+                <!-- Video Viewport -->
+                <div class="relative w-full aspect-video bg-black/80 rounded-2xl overflow-hidden border border-white/10 flex items-center justify-center shadow-inner">
+                    <video id="expected-video-player" class="w-full h-full object-contain {% if not initial_video_exists %}hidden{% endif %}" autoplay loop muted playsinline controls>
+                        {% if initial_video_exists and initial_video_url %}
+                        <source src="{{ initial_video_url }}" type="video/mp4">
+                        {% endif %}
+                    </video>
+
+                    <div id="expected-missing-alert" class="p-6 text-center space-y-2 {% if initial_video_exists %}hidden{% endif %}">
+                        <span class="material-icons-round text-amber-400 text-4xl">motion_photos_off</span>
+                        <p class="text-sm font-bold text-white">Sign animation not available yet</p>
+                        <p class="text-xs text-slate-400 max-w-xs mx-auto">This sign is scheduled for studio animation recording.</p>
+                    </div>
+                </div>
+
+                <!-- Expected Label Badge -->
+                <div class="mt-4 p-4 rounded-2xl bg-white/5 border border-white/5 flex items-center justify-between">
+                    <div>
+                        <span class="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Expected Sign Label:</span>
+                        <span id="badge-expected-label" class="text-base font-black text-primary uppercase tracking-wide">
+                            {% if initial_lesson %}{{ initial_lesson.word_or_phrase }}{% else %}HELLO{% endif %}
+                        </span>
+                    </div>
+                    <div id="recognition-badge" class="px-3 py-1 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-[11px] text-emerald-400 font-semibold flex items-center">
+                        <span class="material-icons-round text-xs mr-1">verified</span> Trained Recognition
+                    </div>
+                </div>
+
+                <!-- Description / Form Guidance -->
+                <p id="display-expected-desc" class="text-xs text-slate-400 mt-3 leading-relaxed px-1">
+                    {% if initial_lesson %}{{ initial_lesson.explanation }}{% else %}Open palm held near temple or ear, moving slightly outward in a greeting wave.{% endif %}
+                </p>
+            </div>
+
+            <div class="pt-4 border-t border-white/5 mt-4 text-[11px] text-slate-500 flex items-center justify-between">
+                <span>Observe hand position & finger formation.</span>
+                <span class="text-primary font-medium">ISL Reference</span>
+            </div>
+        </div>
+
+        <!-- RIGHT: Live Webcam & Real-Time Tracking -->
+        <div class="glass-panel p-6 rounded-3xl border border-white/10 flex flex-col justify-between shadow-2xl relative overflow-hidden">
+            <div>
+                <div class="flex items-center justify-between mb-4">
+                    <div class="flex items-center space-x-2.5">
+                        <span class="w-9 h-9 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center shadow-inner">
+                            <span class="material-icons-round text-xl">videocam</span>
+                        </span>
+                        <div>
+                            <span class="text-[10px] font-bold text-emerald-400 uppercase tracking-widest block">Your Live Sign</span>
+                            <h3 class="text-xl font-black text-white leading-tight tracking-tight">Camera Studio</h3>
+                        </div>
+                    </div>
+
+                    <!-- Real-time Hand Detection Badge -->
+                    <div id="live-tracking-badge" class="inline-flex items-center space-x-1.5 px-3 py-1 rounded-full bg-white/5 border border-white/5 text-xs text-slate-400 font-semibold">
+                        <span id="camera-status-dot" class="w-2 h-2 rounded-full bg-slate-500"></span>
+                        <span id="camera-status-text">Camera Idle</span>
+                    </div>
+                </div>
+
+                <!-- Webcam Video Viewport with Live Canvas Overlay -->
+                <div class="relative w-full aspect-video bg-black/80 rounded-2xl overflow-hidden border border-white/10 flex items-center justify-center shadow-inner group">
+                    <video id="webcam-video" class="w-full h-full object-contain hidden" style="transform: scaleX(-1); transform-origin: center;" autoplay playsinline muted></video>
+                    <!-- Real-time MediaPipe Hand Skeleton Canvas Overlay -->
+                    <canvas id="hand-canvas-overlay" class="absolute inset-0 w-full h-full object-contain pointer-events-none hidden" style="transform: scaleX(-1); transform-origin: center;"></canvas>
+
+                    <!-- Camera Off Placeholder -->
+                    <div id="webcam-off-placeholder" class="text-center p-6 space-y-3">
+                        <div class="w-14 h-14 rounded-2xl bg-white/5 text-slate-400 flex items-center justify-center mx-auto border border-white/5">
+                            <span class="material-icons-round text-3xl">videocam_off</span>
+                        </div>
+                        <div>
+                            <h4 class="text-sm font-bold text-white">Camera is currently off</h4>
+                            <p class="text-xs text-slate-400 mt-1 max-w-xs mx-auto">
+                                Click "Start Camera" to enable real-time hand tracking and analyze your signs.
+                            </p>
+                        </div>
+                    </div>
+
+                    <!-- Countdown & Analysis Overlay (Active during Analyze Sign) -->
+                    <div id="analysis-overlay" class="absolute inset-0 bg-black/85 backdrop-blur-sm flex flex-col items-center justify-center text-center p-6 z-30 hidden">
+                        <div id="countdown-number" class="text-6xl font-black text-primary animate-ping mb-2">3</div>
+                        <h4 id="analysis-step-title" class="text-base font-extrabold text-white">Get Ready...</h4>
+                        <p id="analysis-step-sub" class="text-xs text-slate-300 mt-1 max-w-xs">Center your hands in view.</p>
+                        
+                        <!-- Progress bar during 2.5s capture window -->
+                        <div class="w-48 bg-white/10 rounded-full h-2 mt-4 overflow-hidden hidden" id="capture-progress-container">
+                            <div id="capture-progress-bar" class="bg-primary h-2 rounded-full transition-all duration-100" style="width: 0%"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Live Detected Label Badge -->
+                <div class="mt-4 p-4 rounded-2xl bg-white/5 border border-white/5 flex items-center justify-between">
+                    <div>
+                        <span class="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Live Detected Sign:</span>
+                        <span id="badge-detected-label" class="text-base font-black text-emerald-400 uppercase tracking-wide">
+                            Waiting for analysis...
+                        </span>
+                    </div>
+                    <div id="hand-indicator-pill" class="px-3 py-1 rounded-full bg-white/5 border border-white/10 text-[11px] text-slate-400 font-semibold flex items-center">
+                        <span class="material-icons-round text-xs mr-1 text-slate-500">front_hand</span> Hand Tracker Ready
+                    </div>
+                </div>
+
+                <!-- Camera Controls -->
+                <div class="mt-3 flex items-center gap-3">
+                    <button id="toggle-camera-btn" onclick="toggleWebcam()" 
+                            class="flex-1 inline-flex items-center justify-center px-4 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-bold shadow-lg shadow-emerald-500/20 transition-all">
+                        <span id="toggle-cam-icon" class="material-icons-round text-base mr-1.5">videocam</span>
+                        <span id="toggle-cam-text">Start Camera</span>
+                    </button>
+                    <button onclick="toggleMirror()" class="px-3 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 border border-white/5 text-xs font-semibold transition-all" title="Toggle Mirror Flip">
+                        <span class="material-icons-round text-base">flip</span>
+                    </button>
+                </div>
+            </div>
+
+            <div class="pt-4 border-t border-white/5 mt-4 text-[11px] text-slate-500 flex items-center justify-between">
+                <span class="flex items-center"><span class="material-icons-round text-xs mr-1 text-emerald-400">shield</span> MediaPipe Local Landmark Tracking</span>
+                <span>Camera runs securely in browser</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Central Action Button: ANALYZE SIGN (Requirement 3) -->
+    <div class="glass-panel p-6 rounded-3xl border border-white/10 shadow-2xl text-center space-y-3">
+        <button id="analyze-sign-btn" onclick="startSignAnalysis()" 
+                class="px-10 py-4 rounded-2xl bg-gradient-to-r from-primary via-indigo-500 to-purple-600 hover:from-primary/90 hover:to-purple-700 text-white text-base font-black uppercase tracking-wider shadow-xl shadow-primary/30 hover:scale-[1.02] active:scale-[0.98] transition-all inline-flex items-center space-x-2">
+            <span class="material-icons-round text-xl">analytics</span>
+            <span>Analyze Sign</span>
+        </button>
+        <p class="text-xs text-slate-400">
+            Press <strong class="text-white">Analyze Sign</strong> to start a 3-second capture window and evaluate your sign against the trained ISL classifier.
+        </p>
+    </div>
+
+    <!-- RESULT CONTAINER (Requirement 3 & 19) -->
+    <div id="result-container" class="hidden glass-panel p-8 rounded-3xl border border-white/15 shadow-2xl space-y-6 animate-fade-in">
+        <div class="flex items-center justify-between border-b border-white/10 pb-4">
+            <div class="flex items-center space-x-3">
+                <span id="result-status-icon-badge" class="w-10 h-10 rounded-2xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold text-xl">
+                    ✓
+                </span>
+                <div>
+                    <span class="text-[10px] font-bold uppercase tracking-widest text-slate-400 block">Analysis Output</span>
+                    <h3 id="result-header-title" class="text-2xl font-black text-white tracking-tight">SIGN MATCHED</h3>
+                </div>
+            </div>
+
+            <!-- Match status pill -->
+            <div id="result-status-pill" class="px-4 py-1.5 rounded-full text-xs font-extrabold uppercase tracking-wider bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                ✓ Matched
+            </div>
+        </div>
+
+        <!-- Comparative Display: Expected vs Detected -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div class="p-5 rounded-2xl bg-white/5 border border-white/10 space-y-1">
+                <span class="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">Expected Sign:</span>
+                <span id="result-expected-sign" class="text-2xl font-black text-white tracking-tight uppercase">HELLO</span>
+            </div>
+
+            <div class="p-5 rounded-2xl bg-white/5 border border-white/10 space-y-1">
+                <span class="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">Detected Sign:</span>
+                <span id="result-detected-sign" class="text-2xl font-black text-emerald-400 tracking-tight uppercase">HELLO</span>
+            </div>
+        </div>
+
+        <!-- Genuine Recognition Confidence Gauge (Requirement 2 & 17) -->
+        <div class="p-6 rounded-2xl bg-white/5 border border-white/10 space-y-3">
+            <div class="flex items-center justify-between">
+                <div>
+                    <span class="text-xs font-bold uppercase tracking-wider text-slate-300 block">Recognition Confidence</span>
+                    <span class="text-[11px] text-slate-500">Genuine statistical probability output from the trained sign recognition classifier</span>
+                </div>
+                <span id="result-confidence-percentage" class="text-3xl font-black text-primary">91%</span>
+            </div>
+
+            <!-- Progress Bar -->
+            <div class="w-full bg-slate-900 rounded-full h-3 overflow-hidden border border-white/10 p-0.5">
+                <div id="result-confidence-bar" class="bg-gradient-to-r from-indigo-500 to-primary h-full rounded-full transition-all duration-700" style="width: 91%"></div>
+            </div>
+
+            <!-- Optional Reference Landmark Similarity (Requirement 21) -->
+            <div id="similarity-metric-row" class="pt-3 border-t border-white/5 flex items-center justify-between text-xs text-slate-400">
+                <span class="flex items-center">
+                    <span class="material-icons-round text-xs mr-1 text-purple-400">straighten</span>
+                    Reference Landmark Similarity (Cosine Distance):
+                </span>
+                <strong id="result-similarity-value" class="text-purple-300 font-bold">88%</strong>
+            </div>
+        </div>
+
+        <!-- Grounded Honest Feedback & Guidance (Requirement 20) -->
+        <div class="p-5 rounded-2xl bg-white/5 border border-white/10 space-y-1.5">
+            <h4 class="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center">
+                <span class="material-icons-round text-xs mr-1 text-primary">tips_and_updates</span> Guidance & Observations
+            </h4>
+            <p id="result-feedback-text" class="text-xs text-slate-300 leading-relaxed font-medium">
+                ✓ Excellent! Your hand formation and movement matched the expected sign.
+            </p>
+            <p id="result-guidance-text" class="text-[11px] text-slate-400 leading-relaxed">
+                Your finger positions and gesture trajectory were clearly recognized.
+            </p>
+        </div>
+
+        <!-- Action Controls: [ TRY AGAIN ] [ NEXT SIGN ] (Requirement 3 & 19) -->
+        <div class="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2">
+            <button onclick="retryCurrentSign()" class="w-full sm:w-auto px-6 py-3 rounded-xl bg-white/10 hover:bg-white/15 text-white text-xs font-bold transition-all flex items-center justify-center">
+                <span class="material-icons-round text-base mr-1.5">replay</span> Try Again
+            </button>
+
+            <button onclick="advanceNextSign()" id="next-sign-btn" class="w-full sm:w-auto px-8 py-3 rounded-xl bg-primary hover:bg-primary/90 text-white text-xs font-bold shadow-lg shadow-primary/25 transition-all flex items-center justify-center">
+                <span>Next Sign</span>
+                <span class="material-icons-round text-base ml-1.5">arrow_forward</span>
+            </button>
+        </div>
+    </div>
+
+    <!-- Navigation & Next Steps Footer -->
+    <div class="glass-panel p-6 rounded-3xl border border-white/10 flex flex-col sm:flex-row items-center justify-between gap-4">
+        <div>
+            <h4 class="text-sm font-bold text-white">Ready for the Section Quiz?</h4>
+            <p class="text-xs text-slate-400">Practice is completely optional. Take the Duolingo-style Section Quiz whenever you feel confident.</p>
+        </div>
+
+        <div class="flex items-center space-x-3 w-full sm:w-auto">
+            <a href="{% url 'learn_dashboard' %}" class="flex-1 sm:flex-initial inline-flex items-center justify-center px-4 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 text-xs font-medium border border-white/5 transition-all">
+                <span class="material-icons-round text-sm mr-1">map</span> Course Map
+            </a>
+            <a href="{% url 'learn_quiz' section.id %}" class="flex-1 sm:flex-initial inline-flex items-center justify-center px-5 py-2.5 rounded-xl bg-primary hover:bg-primary/90 text-white text-xs font-semibold shadow-lg shadow-primary/25 transition-all">
+                <span class="material-icons-round text-sm mr-1">quiz</span> Take Section Quiz
+            </a>
+        </div>
+    </div>
+
+</div>
+
+<!-- Real Sign Recognition & MediaPipe Client Script -->
+<script>
+const SECTION_ID = {{ section.id }};
+const CSRF_TOKEN = '{{ csrf_token }}';
+
+// State management
+let currentSignTitle = '{% if initial_lesson %}{{ initial_lesson.word_or_phrase|escapejs }}{% else %}HELLO{% endif %}';
+let currentLessonId = {% if initial_lesson %}{{ initial_lesson.id }}{% else %}null{% endif %};
+let isCameraActive = false;
+let isMirrored = true;
+let isAnalyzing = false;
+let recordedFrames = [];
+let mediaStream = null;
+let handsDetector = null;
+let animationFrameId = null;
+let isProcessingFrame = false;
+let isMediaPipeLoading = false;
+let lastWristPos = null;
+
+// UI Elements
+const videoEl = document.getElementById('expected-video-player');
+const missingAlertEl = document.getElementById('expected-missing-alert');
+const displayTitleEl = document.getElementById('display-expected-title');
+const badgeExpectedLabel = document.getElementById('badge-expected-label');
+const displayDescEl = document.getElementById('display-expected-desc');
+const badgeDetectedLabel = document.getElementById('badge-detected-label');
+const recognitionBadge = document.getElementById('recognition-badge');
+
+const webcamVideo = document.getElementById('webcam-video');
+const handCanvas = document.getElementById('hand-canvas-overlay');
+const canvasCtx = handCanvas.getContext('2d');
+const webcamPlaceholder = document.getElementById('webcam-off-placeholder');
+const cameraStatusDot = document.getElementById('camera-status-dot');
+const cameraStatusText = document.getElementById('camera-status-text');
+const toggleCamBtn = document.getElementById('toggle-camera-btn');
+const toggleCamIcon = document.getElementById('toggle-cam-icon');
+const toggleCamText = document.getElementById('toggle-cam-text');
+const handIndicatorPill = document.getElementById('hand-indicator-pill');
+
+function updateTrackerStatus(state, message) {
+    if (!cameraStatusDot || !cameraStatusText || !handIndicatorPill) return;
+
+    if (state === 'tracking') {
+        cameraStatusDot.className = 'w-2 h-2 rounded-full bg-emerald-400 animate-pulse';
+        cameraStatusText.textContent = message || 'Tracking';
+        handIndicatorPill.className = 'px-3 py-1 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-[11px] text-emerald-400 font-semibold flex items-center shadow-sm shadow-emerald-500/10';
+        handIndicatorPill.innerHTML = '<span class="material-icons-round text-xs mr-1 text-emerald-400">check_circle</span> Hand Tracked';
+    } else if (state === 'nohand') {
+        cameraStatusDot.className = 'w-2 h-2 rounded-full bg-amber-400';
+        cameraStatusText.textContent = message || 'No Hand In View';
+        handIndicatorPill.className = 'px-3 py-1 rounded-full bg-white/5 border border-white/10 text-[11px] text-slate-400 font-semibold flex items-center';
+        handIndicatorPill.innerHTML = '<span class="material-icons-round text-xs mr-1 text-amber-400">pan_tool</span> Hold Hand in View';
+    } else if (state === 'loading') {
+        cameraStatusDot.className = 'w-2 h-2 rounded-full bg-amber-400 animate-ping';
+        cameraStatusText.textContent = message || 'Loading Hand AI...';
+        handIndicatorPill.className = 'px-3 py-1 rounded-full bg-amber-500/10 border border-amber-500/20 text-[11px] text-amber-300 font-semibold flex items-center';
+        handIndicatorPill.innerHTML = '<span class="material-icons-round text-xs mr-1 animate-spin text-amber-400">sync</span> Loading AI Model...';
+    } else if (state === 'ready') {
+        cameraStatusDot.className = 'w-2 h-2 rounded-full bg-emerald-400';
+        cameraStatusText.textContent = message || 'Camera Active';
+        handIndicatorPill.className = 'px-3 py-1 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-[11px] text-emerald-400 font-semibold flex items-center';
+        handIndicatorPill.innerHTML = '<span class="material-icons-round text-xs mr-1 text-emerald-400">verified</span> Hand Tracker Ready';
+    } else if (state === 'error') {
+        cameraStatusDot.className = 'w-2 h-2 rounded-full bg-rose-500';
+        cameraStatusText.textContent = message || 'Camera Error';
+        handIndicatorPill.className = 'px-3 py-1 rounded-full bg-rose-500/15 border border-rose-500/30 text-[11px] text-rose-400 font-semibold flex items-center';
+        handIndicatorPill.innerHTML = '<span class="material-icons-round text-xs mr-1 text-rose-400">error</span> Tracker Error';
+    } else {
+        cameraStatusDot.className = 'w-2 h-2 rounded-full bg-slate-500';
+        cameraStatusText.textContent = message || 'Camera Idle';
+        handIndicatorPill.className = 'px-3 py-1 rounded-full bg-white/5 border border-white/10 text-[11px] text-slate-400 font-semibold flex items-center';
+        handIndicatorPill.innerHTML = '<span class="material-icons-round text-xs mr-1 text-slate-500">videocam_off</span> Camera Off';
+    }
+}
+
+const warningBanner = document.getElementById('section-warning-banner');
+const warningTitle = document.getElementById('warning-title');
+const warningMessage = document.getElementById('warning-message');
+const suggestedSignsRow = document.getElementById('suggested-signs-row');
+const unsupportedBanner = document.getElementById('unsupported-recognition-banner');
+
+const analysisOverlay = document.getElementById('analysis-overlay');
+const countdownEl = document.getElementById('countdown-number');
+const stepTitleEl = document.getElementById('analysis-step-title');
+const stepSubEl = document.getElementById('analysis-step-sub');
+const captureProgressContainer = document.getElementById('capture-progress-container');
+const captureProgressBar = document.getElementById('capture-progress-bar');
+
+const resultContainer = document.getElementById('result-container');
+const resultExpectedSign = document.getElementById('result-expected-sign');
+const resultDetectedSign = document.getElementById('result-detected-sign');
+const resultConfidencePct = document.getElementById('result-confidence-percentage');
+const resultConfidenceBar = document.getElementById('result-confidence-bar');
+const resultSimilarityVal = document.getElementById('result-similarity-value');
+const resultFeedbackText = document.getElementById('result-feedback-text');
+const resultGuidanceText = document.getElementById('result-guidance-text');
+const resultStatusPill = document.getElementById('result-status-pill');
+const resultStatusIconBadge = document.getElementById('result-status-icon-badge');
+const resultHeaderTitle = document.getElementById('result-header-title');
+
+
+// =====================================================================
+// 1. SIGN LOOKUP & VALIDATION (REQUIREMENT 4 & 25)
+// =====================================================================
+
+async function handleLookupSign() {
+    const inputVal = document.getElementById('sign-input-query').value.trim();
+    if (!inputVal) return;
+
+    warningBanner.classList.add('hidden');
+    unsupportedBanner.classList.add('hidden');
+
+    try {
+        const resp = await fetch(`/learn/section/${SECTION_ID}/practice/lookup/?q=` + encodeURIComponent(inputVal));
+        const data = await resp.json();
+
+        if (data.found && data.in_section) {
+            // Found in current section!
+            applyLoadedLesson(data.lesson);
+        } else if (data.belongs_to_other_section) {
+            // Sign belongs to another section! (Requirement 4 & 25)
+            showSectionWarning(
+                `Sign Belongs to Section ${data.other_section_name}`,
+                data.message,
+                data.available_signs
+            );
+        } else {
+            // Unknown or not in section
+            showSectionWarning(
+                `Not Available in Section {{ section.section_number }}`,
+                data.message,
+                data.available_signs
+            );
+        }
+    } catch (e) {
+        console.error('Sign lookup failed:', e);
+    }
+}
+
+function showSectionWarning(title, message, availableSigns) {
+    warningTitle.textContent = title;
+    warningMessage.textContent = message;
+
+    suggestedSignsRow.innerHTML = `<span class="text-[10px] uppercase font-bold text-slate-400 mr-1">Available in Section {{ section.section_number }}:</span>` +
+        (availableSigns || []).map(s => `
+            <button onclick="document.getElementById('sign-input-query').value='${s}'; handleLookupSign()" 
+                    class="px-2.5 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 border border-amber-500/30 text-[11px] font-semibold transition-all">
+                ${s}
+            </button>
+        `).join('');
+
+    warningBanner.classList.remove('hidden');
+}
+
+function loadSignDirectly(lessonId, word, videoUrl, description, isSupported) {
+    document.getElementById('sign-input-query').value = word;
+    warningBanner.classList.add('hidden');
+    unsupportedBanner.classList.add('hidden');
+
+    applyLoadedLesson({
+        id: lessonId,
+        title: word,
+        word: word,
+        video_url: videoUrl,
+        has_video: Boolean(videoUrl && videoUrl.trim() !== ''),
+        description: description,
+        is_supported_for_recognition: isSupported
+    });
+}
+
+function applyLoadedLesson(lesson) {
+    currentSignTitle = lesson.word;
+    currentLessonId = lesson.id;
+
+    displayTitleEl.textContent = lesson.word;
+    badgeExpectedLabel.textContent = lesson.word;
+    displayDescEl.textContent = lesson.description || 'Practice this sign with clear, deliberate hand movements.';
+
+    // Update active pill highlight
+    document.querySelectorAll('.sign-pill').forEach(p => {
+        p.className = 'sign-pill px-3 py-1.5 rounded-xl text-xs font-semibold border transition-all flex items-center space-x-1.5 bg-white/5 hover:bg-white/10 text-slate-300 border-white/5';
+    });
+    const activePill = document.getElementById('pill-lesson-' + lesson.id);
+    if (activePill) {
+        activePill.className = 'sign-pill px-3 py-1.5 rounded-xl text-xs font-semibold border transition-all flex items-center space-x-1.5 bg-primary text-white border-primary shadow-md shadow-primary/25';
+    }
+
+    // Video reference
+    if (lesson.has_video && lesson.video_url) {
+        videoEl.classList.remove('hidden');
+        missingAlertEl.classList.add('hidden');
+        videoEl.src = lesson.video_url;
+        videoEl.load();
+        videoEl.play().catch(e => console.log('Autoplay prevented:', e));
+    } else {
+        videoEl.pause();
+        videoEl.classList.add('hidden');
+        missingAlertEl.classList.remove('hidden');
+    }
+
+    // Recognition support badge
+    if (lesson.is_supported_for_recognition) {
+        recognitionBadge.className = 'px-3 py-1 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-[11px] text-emerald-400 font-semibold flex items-center';
+        recognitionBadge.innerHTML = '<span class="material-icons-round text-xs mr-1">verified</span> Trained Recognition';
+        unsupportedBanner.classList.add('hidden');
+    } else {
+        recognitionBadge.className = 'px-3 py-1 rounded-full bg-slate-500/15 border border-slate-500/30 text-[11px] text-slate-400 font-semibold flex items-center';
+        recognitionBadge.innerHTML = '<span class="material-icons-round text-xs mr-1">schedule</span> Visual Practice Only';
+        unsupportedBanner.classList.remove('hidden');
+    }
+
+    // Reset results if looking up a new sign
+    resultContainer.classList.add('hidden');
+}
+
+function replayExpectedVideo() {
+    if (videoEl && !videoEl.classList.contains('hidden')) {
+        videoEl.currentTime = 0;
+        videoEl.play();
+    }
+}
+
+
+// =====================================================================
+// 2. WEBCAM & MEDIAPIPE HAND LANDMARK TRACKING (REQUIREMENTS 7 & 12)
+// =====================================================================
+
+async function initMediaPipeHands() {
+    if (handsDetector) return handsDetector;
+    if (isMediaPipeLoading) {
+        while (isMediaPipeLoading) {
+            await new Promise(r => setTimeout(r, 100));
+        }
+        return handsDetector;
+    }
+
+    isMediaPipeLoading = true;
+    updateTrackerStatus('loading', 'Loading Hand AI...');
+
+    try {
+        if (typeof Hands === 'undefined') {
+            let retries = 0;
+            while (typeof Hands === 'undefined' && retries < 25) {
+                await new Promise(r => setTimeout(r, 200));
+                retries++;
+            }
+            if (typeof Hands === 'undefined') {
+                throw new Error("MediaPipe Hands library could not be loaded from CDN.");
+            }
+        }
+
+        handsDetector = new Hands({
+            locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/${file}`
+        });
+
+        handsDetector.setOptions({
+            maxNumHands: 2,
+            modelComplexity: 1,
+            minDetectionConfidence: 0.5,
+            minTrackingConfidence: 0.5
+        });
+
+        handsDetector.onResults(onHandResults);
+
+        if (typeof handsDetector.initialize === 'function') {
+            await handsDetector.initialize();
+        }
+
+        updateTrackerStatus('ready', 'Hand Tracker Ready');
+        console.log("[SignAI] MediaPipe Hands model initialized successfully.");
+        return handsDetector;
+    } catch (err) {
+        console.error('[SignAI] MediaPipe initialization error:', err);
+        updateTrackerStatus('error', 'Tracker Init Failed');
+        return null;
+    } finally {
+        isMediaPipeLoading = false;
+    }
+}
+
+function onHandResults(results) {
+    if (!isCameraActive) return;
+
+    // Resize overlay canvas to match webcam video dimensions
+    const vWidth = webcamVideo.videoWidth || 640;
+    const vHeight = webcamVideo.videoHeight || 480;
+    if (handCanvas.width !== vWidth || handCanvas.height !== vHeight) {
+        handCanvas.width = vWidth;
+        handCanvas.height = vHeight;
+    }
+
+    canvasCtx.save();
+    canvasCtx.clearRect(0, 0, handCanvas.width, handCanvas.height);
+
+    const hands = results.multiHandLandmarks;
+    const hasHands = hands && hands.length > 0;
+
+    if (hasHands) {
+        // Draw hand landmarks & connections for all visible hands
+        for (let i = 0; i < hands.length; i++) {
+            drawHandSkeleton(hands[i], canvasCtx, handCanvas.width, handCanvas.height);
+        }
+
+        // Determine primary hand for sequence recording (temporal tracking continuity)
+        let primaryHand = hands[0];
+        if (hands.length > 1 && lastWristPos) {
+            let minD = Infinity;
+            for (const h of hands) {
+                const d = Math.hypot(h[0].x - lastWristPos.x, h[0].y - lastWristPos.y);
+                if (d < minD) {
+                    minD = d;
+                    primaryHand = h;
+                }
+            }
+        }
+        lastWristPos = { x: primaryHand[0].x, y: primaryHand[0].y };
+
+        // Collect frames during active sign recording window
+        if (isAnalyzing) {
+            recordedFrames.push({
+                timestamp: Date.now(),
+                landmarks: primaryHand.map(p => ({ x: p.x, y: p.y, z: p.z }))
+            });
+        }
+
+        updateTrackerStatus('tracking', `Tracking (${hands.length} hand${hands.length > 1 ? 's' : ''})`);
+    } else {
+        lastWristPos = null;
+        updateTrackerStatus('nohand', 'Hold Hand in View');
+    }
+
+    canvasCtx.restore();
+}
+
+// MediaPipe landmark connections (21 joints: thumb, index, middle, ring, pinky, palm)
+const HAND_CONNECTIONS = [
+    [0, 1], [1, 2], [2, 3], [3, 4],          // Thumb
+    [0, 5], [5, 6], [6, 7], [7, 8],          // Index
+    [9, 10], [10, 11], [11, 12],             // Middle
+    [13, 14], [14, 15], [15, 16],             // Ring
+    [0, 17], [17, 18], [18, 19], [19, 20],   // Pinky & Palm base
+    [5, 9], [9, 13], [13, 17]                 // Knuckle MCP arch
+];
+
+function drawHandSkeleton(landmarks, ctx, width, height) {
+    if (!landmarks || landmarks.length < 21) return;
+
+    // 1. Draw glowing bones
+    ctx.save();
+    ctx.shadowColor = 'rgba(6, 182, 212, 0.7)';
+    ctx.shadowBlur = 8;
+    ctx.strokeStyle = '#22d3ee'; // Bright Cyan
+    ctx.lineWidth = 3;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+
+    for (const [startIdx, endIdx] of HAND_CONNECTIONS) {
+        const p1 = landmarks[startIdx];
+        const p2 = landmarks[endIdx];
+        ctx.beginPath();
+        ctx.moveTo(p1.x * width, p1.y * height);
+        ctx.lineTo(p2.x * width, p2.y * height);
+        ctx.stroke();
+    }
+    ctx.restore();
+
+    // 2. Draw anatomical joint nodes
+    const tipIndices = [4, 8, 12, 16, 20];
+    for (let i = 0; i < landmarks.length; i++) {
+        const p = landmarks[i];
+        const cx = p.x * width;
+        const cy = p.y * height;
+
+        ctx.beginPath();
+        if (i === 0) {
+            // Wrist base: Emerald green with white rim
+            ctx.arc(cx, cy, 6, 0, 2 * Math.PI);
+            ctx.fillStyle = '#10b981';
+            ctx.fill();
+            ctx.lineWidth = 2;
+            ctx.strokeStyle = '#ffffff';
+            ctx.stroke();
+        } else if (tipIndices.includes(i)) {
+            // Fingertip points: Coral rose with white rim
+            ctx.arc(cx, cy, 5.5, 0, 2 * Math.PI);
+            ctx.fillStyle = '#f43f5e';
+            ctx.fill();
+            ctx.lineWidth = 2;
+            ctx.strokeStyle = '#ffffff';
+            ctx.stroke();
+        } else {
+            // Knuckle joints: Sky cyan with subtle rim
+            ctx.arc(cx, cy, 3.5, 0, 2 * Math.PI);
+            ctx.fillStyle = '#38bdf8';
+            ctx.fill();
+            ctx.lineWidth = 1.5;
+            ctx.strokeStyle = '#ffffff';
+            ctx.stroke();
+        }
+    }
+}
+
+async function toggleWebcam() {
+    if (isCameraActive) {
+        stopWebcam();
+    } else {
+        await startWebcam();
+    }
+}
+
+async function startWebcam() {
+    try {
+        updateTrackerStatus('loading', 'Starting camera...');
+
+        // 1. Request user webcam stream (single call, no duplicate CameraUtils)
+        mediaStream = await navigator.mediaDevices.getUserMedia({
+            video: {
+                width: { ideal: 640 },
+                height: { ideal: 480 },
+                facingMode: 'user'
+            },
+            audio: false
+        });
+
+        webcamVideo.srcObject = mediaStream;
+        await webcamVideo.play();
+
+        // Match overlay canvas size to stream
+        handCanvas.width = webcamVideo.videoWidth || 640;
+        handCanvas.height = webcamVideo.videoHeight || 480;
+
+        webcamVideo.classList.remove('hidden');
+        handCanvas.classList.remove('hidden');
+        webcamPlaceholder.classList.add('hidden');
+
+        isCameraActive = true;
+        toggleCamBtn.className = 'flex-1 inline-flex items-center justify-center px-4 py-2.5 rounded-xl bg-red-500/20 hover:bg-red-500/30 text-red-400 border border-red-500/30 text-xs font-bold transition-all';
+        toggleCamIcon.textContent = 'videocam_off';
+        toggleCamText.textContent = 'Stop Camera';
+
+        // 2. Initialize MediaPipe Hands
+        await initMediaPipeHands();
+
+        // 3. Start high-performance animation frame loop
+        if (animationFrameId) {
+            cancelAnimationFrame(animationFrameId);
+        }
+        animationFrameId = requestAnimationFrame(processWebcamFrame);
+
+    } catch (err) {
+        console.error('Camera access error:', err);
+        updateTrackerStatus('error', 'Camera Error');
+        alert('Camera access error: ' + (err.message || 'Please check webcam permissions.'));
+        stopWebcam();
+    }
+}
+
+async function processWebcamFrame() {
+    if (!isCameraActive) return;
+
+    if (handsDetector && webcamVideo && webcamVideo.readyState >= 2 && !webcamVideo.paused) {
+        if (!isProcessingFrame) {
+            isProcessingFrame = true;
+            try {
+                await handsDetector.send({ image: webcamVideo });
+            } catch (frameErr) {
+                console.warn('[SignAI] MediaPipe frame send error:', frameErr);
+            } finally {
+                isProcessingFrame = false;
+            }
+        }
+    }
+
+    if (isCameraActive) {
+        animationFrameId = requestAnimationFrame(processWebcamFrame);
+    }
+}
+
+function stopWebcam() {
+    isCameraActive = false;
+    isAnalyzing = false;
+    isProcessingFrame = false;
+    lastWristPos = null;
+
+    if (animationFrameId) {
+        cancelAnimationFrame(animationFrameId);
+        animationFrameId = null;
+    }
+
+    if (mediaStream) {
+        mediaStream.getTracks().forEach(track => track.stop());
+        mediaStream = null;
+    }
+
+    if (webcamVideo) {
+        webcamVideo.pause();
+        webcamVideo.srcObject = null;
+        webcamVideo.classList.add('hidden');
+    }
+
+    if (handCanvas) {
+        if (canvasCtx) {
+            canvasCtx.clearRect(0, 0, handCanvas.width, handCanvas.height);
+        }
+        handCanvas.classList.add('hidden');
+    }
+
+    if (webcamPlaceholder) {
+        webcamPlaceholder.classList.remove('hidden');
+    }
+
+    toggleCamBtn.className = 'flex-1 inline-flex items-center justify-center px-4 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-bold shadow-lg shadow-emerald-500/20 transition-all';
+    toggleCamIcon.textContent = 'videocam';
+    toggleCamText.textContent = 'Start Camera';
+
+    updateTrackerStatus('idle', 'Camera Idle');
+}
+
+function toggleMirror() {
+    isMirrored = !isMirrored;
+    const transformVal = isMirrored ? 'scaleX(-1)' : 'scaleX(1)';
+    webcamVideo.style.transform = transformVal;
+    handCanvas.style.transform = transformVal;
+}
+
+// Clean up on page change
+window.addEventListener('beforeunload', () => {
+    stopWebcam();
+});
+
+
+// =====================================================================
+// 3. CAPTURE WINDOW & RECOGNITION INFERENCE (REQUIREMENTS 13, 15, 26)
+// =====================================================================
+
+async function startSignAnalysis() {
+    // 1. Ensure camera is active
+    if (!isCameraActive) {
+        await startWebcam();
+        if (!isCameraActive) return;
+    }
+
+    // 2. Ensure MediaPipe Hands tracker is initialized
+    if (!handsDetector) {
+        updateTrackerStatus('loading', 'Preparing hand tracker...');
+        await initMediaPipeHands();
+        if (!handsDetector) {
+            alert('Hand tracking model could not be initialized. Please check your internet connection and try again.');
+            return;
+        }
+    }
+
+    const analyzeBtn = document.getElementById('analyze-sign-btn');
+    analyzeBtn.disabled = true;
+    analyzeBtn.classList.add('opacity-50', 'cursor-not-allowed');
+
+    // 3. Countdown 3-2-1
+    analysisOverlay.classList.remove('hidden');
+    captureProgressContainer.classList.add('hidden');
+    captureProgressBar.style.width = '0%';
+
+    let count = 3;
+    countdownEl.textContent = count;
+    stepTitleEl.textContent = 'Get Ready...';
+    stepSubEl.textContent = `Center your hands to perform '${currentSignTitle}'`;
+
+    const countdownTimer = setInterval(() => {
+        count--;
+        if (count > 0) {
+            countdownEl.textContent = count;
+        } else {
+            clearInterval(countdownTimer);
+            beginCaptureWindow();
+        }
+    }, 900);
+}
+
+function beginCaptureWindow() {
+    countdownEl.textContent = 'GO!';
+    stepTitleEl.textContent = `Perform '${currentSignTitle}' Now`;
+    stepSubEl.textContent = 'Hold and complete the gesture steadily...';
+    captureProgressContainer.classList.remove('hidden');
+
+    recordedFrames = [];
+    isAnalyzing = true;
+
+    const CAPTURE_DURATION_MS = 2400;
+    const START_TIME = Date.now();
+
+    const progressInterval = setInterval(() => {
+        const elapsed = Date.now() - START_TIME;
+        const pct = Math.min(100, Math.round((elapsed / CAPTURE_DURATION_MS) * 100));
+        captureProgressBar.style.width = `${pct}%`;
+
+        if (elapsed >= CAPTURE_DURATION_MS) {
+            clearInterval(progressInterval);
+            finishCaptureAndPredict();
+        }
+    }, 50);
+}
+
+async function finishCaptureAndPredict() {
+    isAnalyzing = false;
+    stepTitleEl.textContent = 'Analyzing with SignAI Model...';
+    stepSubEl.textContent = 'Evaluating hand landmarks and trajectory...';
+    countdownEl.textContent = '⏳';
+
+    try {
+        const resp = await fetch(`/learn/section/${SECTION_ID}/practice/analyze/`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': CSRF_TOKEN
+            },
+            body: JSON.stringify({
+                expected_sign: currentSignTitle,
+                frames: recordedFrames
+            })
+        });
+
+        const data = await resp.json();
+        renderAnalysisResult(data);
+    } catch (err) {
+        console.error('Analysis error:', err);
+        alert('Could not complete sign analysis. Please check your network connection and try again.');
+    } finally {
+        analysisOverlay.classList.add('hidden');
+        const analyzeBtn = document.getElementById('analyze-sign-btn');
+        analyzeBtn.disabled = false;
+        analyzeBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+    }
+}
+
+
+// =====================================================================
+// 4. RESULT RENDERING & GENUINE METRICS DISPLAY (REQUIREMENTS 2, 17, 19)
+// =====================================================================
+
+function renderAnalysisResult(data) {
+    resultContainer.classList.remove('hidden');
+    resultContainer.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+
+    resultExpectedSign.textContent = data.expected_sign || currentSignTitle;
+    resultDetectedSign.textContent = data.detected_sign || 'Uncertain';
+    badgeDetectedLabel.textContent = data.detected_sign || 'Uncertain';
+
+    const confPct = data.confidence_percentage !== undefined ? data.confidence_percentage : Math.round((data.recognition_confidence || 0) * 100);
+    resultConfidencePct.textContent = `${confPct}%`;
+    resultConfidenceBar.style.width = `${confPct}%`;
+
+    // Reference Similarity (Requirement 21)
+    if (data.reference_similarity !== null && data.reference_similarity !== undefined) {
+        document.getElementById('similarity-metric-row').classList.remove('hidden');
+        resultSimilarityVal.textContent = `${Math.round(data.reference_similarity * 100)}%`;
+    } else {
+        document.getElementById('similarity-metric-row').classList.add('hidden');
+    }
+
+    resultFeedbackText.textContent = data.feedback || '';
+    resultGuidanceText.textContent = data.guidance || '';
+
+    // Style according to status (Requirement 18 & 19)
+    if (data.status === 'matched') {
+        resultStatusIconBadge.className = 'w-10 h-10 rounded-2xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold text-xl';
+        resultStatusIconBadge.textContent = '✓';
+        resultHeaderTitle.textContent = 'SIGN MATCHED';
+        resultStatusPill.className = 'px-4 py-1.5 rounded-full text-xs font-extrabold uppercase tracking-wider bg-emerald-500/20 text-emerald-400 border border-emerald-500/30';
+        resultStatusPill.textContent = '✓ Matched';
+        resultConfidenceBar.className = 'bg-gradient-to-r from-emerald-500 to-teal-400 h-full rounded-full transition-all duration-700';
+        resultDetectedSign.className = 'text-2xl font-black text-emerald-400 tracking-tight uppercase';
+    } else if (data.status === 'not_matched') {
+        resultStatusIconBadge.className = 'w-10 h-10 rounded-2xl bg-rose-500/20 text-rose-400 flex items-center justify-center font-bold text-xl';
+        resultStatusIconBadge.textContent = '✕';
+        resultHeaderTitle.textContent = 'SIGN DOES NOT MATCH';
+        resultStatusPill.className = 'px-4 py-1.5 rounded-full text-xs font-extrabold uppercase tracking-wider bg-rose-500/20 text-rose-400 border border-rose-500/30';
+        resultStatusPill.textContent = '✕ Not Matched';
+        resultConfidenceBar.className = 'bg-gradient-to-r from-rose-500 to-amber-500 h-full rounded-full transition-all duration-700';
+        resultDetectedSign.className = 'text-2xl font-black text-rose-400 tracking-tight uppercase';
+    } else if (data.status === 'no_hand') {
+        resultStatusIconBadge.className = 'w-10 h-10 rounded-2xl bg-slate-500/20 text-slate-400 flex items-center justify-center font-bold text-xl';
+        resultStatusIconBadge.textContent = '✋';
+        resultHeaderTitle.textContent = 'NO HAND DETECTED';
+        resultStatusPill.className = 'px-4 py-1.5 rounded-full text-xs font-extrabold uppercase tracking-wider bg-slate-500/20 text-slate-400 border border-white/10';
+        resultStatusPill.textContent = 'No Hand In View';
+        resultConfidenceBar.className = 'bg-slate-700 h-full rounded-full transition-all duration-700';
+        resultDetectedSign.className = 'text-2xl font-black text-slate-400 tracking-tight uppercase';
+    } else {
+        // Uncertain or insufficient data
+        resultStatusIconBadge.className = 'w-10 h-10 rounded-2xl bg-amber-500/20 text-amber-400 flex items-center justify-center font-bold text-xl';
+        resultStatusIconBadge.textContent = '⚠';
+        resultHeaderTitle.textContent = 'UNCERTAIN PREDICTION';
+        resultStatusPill.className = 'px-4 py-1.5 rounded-full text-xs font-extrabold uppercase tracking-wider bg-amber-500/20 text-amber-400 border border-amber-500/30';
+        resultStatusPill.textContent = '⚠ Low Confidence';
+        resultConfidenceBar.className = 'bg-gradient-to-r from-amber-500 to-yellow-400 h-full rounded-full transition-all duration-700';
+        resultDetectedSign.className = 'text-2xl font-black text-amber-400 tracking-tight uppercase';
+    }
+}
+
+function retryCurrentSign() {
+    resultContainer.classList.add('hidden');
+    startSignAnalysis();
+}
+
+function advanceNextSign() {
+    // Find next pill in list
+    const pills = Array.from(document.querySelectorAll('.sign-pill'));
+    const activeIdx = pills.findIndex(p => p.id === 'pill-lesson-' + currentLessonId);
+    if (activeIdx !== -1 && activeIdx < pills.length - 1) {
+        pills[activeIdx + 1].click();
+    } else if (pills.length > 0) {
+        pills[0].click();
+    }
+    resultContainer.classList.add('hidden');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+</script>
+{% endblock %}

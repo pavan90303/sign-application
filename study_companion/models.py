@@ -311,3 +311,39 @@ class TeacherReview(models.Model):
         return f"Review by {self.teacher.username} on Assessment #{self.assessment.id}"
 
 
+class TutorConversation(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='tutor_conversations')
+    title = models.CharField(max_length=255, default='New Conversation')
+    mode = models.CharField(max_length=50, default='general')  # 'general' or 'course'
+    course_material = models.ForeignKey(PPTUpload, on_delete=models.SET_NULL, null=True, blank=True, related_name='tutor_conversations')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-updated_at']
+
+    def __str__(self):
+        return f"{self.user.username} - {self.title} ({self.created_at.strftime('%Y-%m-%d %H:%M')})"
+
+
+class TutorMessage(models.Model):
+    ROLE_CHOICES = [
+        ('user', 'User'),
+        ('assistant', 'Assistant'),
+    ]
+
+    conversation = models.ForeignKey(TutorConversation, on_delete=models.CASCADE, related_name='messages')
+    role = models.CharField(max_length=20, choices=ROLE_CHOICES)
+    content = models.TextField()
+    source_type = models.CharField(max_length=50, default='general')
+    metadata_json = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['created_at']
+
+    def __str__(self):
+        return f"[{self.role}] {self.conversation.title[:30]}: {self.content[:40]}"
+
+
+

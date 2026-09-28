@@ -14,17 +14,27 @@ Including another URLconf
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
 from django.contrib import admin
-from django.urls import path, include
+from django.urls import path, include, re_path
+from django.views.static import serve
+from django.conf import settings
+import os
 from . import views
 
 urlpatterns = [
     path('admin/', admin.site.urls),
+    re_path(r'^static/(?P<path>.*)$', serve, {'document_root': os.path.join(settings.BASE_DIR, 'assets')}),
+    re_path(r'^assets/(?P<path>.*)$', serve, {'document_root': os.path.join(settings.BASE_DIR, 'assets')}),
+
+    # Feature Modules
+    path('', include('apps.accounts.urls')),
+    path('', include('apps.dashboard.urls')),
+    path('', include('apps.upload.urls')),
+    path('', include('apps.live_converter.urls')),
+    path('', include('apps.learning.urls')),
+    path('', include('apps.quiz.urls')),
+    path('', include('apps.sign_to_english.urls')),
+    path('', include('apps.concept_assessment.urls')),
+
+    # Core App Backward-Compatibility Routes
     path('', include('study_companion.urls')),
-    path('about/',views.about_view,name='about'),
-    path('contact/',views.contact_view,name='contact'),
-    path('login/',views.login_view,name='login'),
-    path('logout/',views.logout_view,name='logout'),
-    path('signup/',views.signup_view,name='signup'),
-    path('signup/',views.signup_view,name='signup'),
-    path('',views.home_view,name='home')
 ]

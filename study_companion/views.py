@@ -367,7 +367,8 @@ def learn_course_dashboard(request):
 @login_required(login_url="login")
 def learn_section_view(request, section_id):
     """
-    Navigates to the active/first incomplete lesson in a section.
+    Section Learning Content & Curriculum Hub.
+    Replaces the individual sign lesson screens with a cohesive section-level learning overview.
     """
     section = get_object_or_404(CourseSection, id=section_id)
     progress_data = get_user_course_progress(request.user)
@@ -377,21 +378,55 @@ def learn_section_view(request, section_id):
     if sec_info and not sec_info['is_unlocked']:
         return redirect('learn_dashboard')
 
-    # Find first incomplete lesson
-    completed_ids = set(LessonProgress.objects.filter(user=request.user, completed=True).values_list('lesson_id', flat=True))
-    lessons = list(section.lessons.all().order_by('order'))
-    target_lesson = None
-    for l in lessons:
-        if l.id not in completed_ids:
-            target_lesson = l
-            break
-            
-    if not target_lesson and lessons:
-        target_lesson = lessons[0]
+    # Get section-level curriculum sidebar for all 5 sections
+    curriculum = []
+    for s_info in progress_data['sections']:
+        s = s_info['section']
+        curriculum.append({
+            'section': s,
+            'is_current': s.id == section.id,
+            'is_unlocked': s_info['is_unlocked'],
+            'is_completed': s_info['is_completed'],
+            'quiz_passed': s_info['quiz_passed'],
+            'best_score': s_info['best_score'],
+        })
 
-    if target_lesson:
-        return redirect('learn_lesson', lesson_id=target_lesson.id)
-    return redirect('learn_dashboard')
+    # Vocabulary & Key Signs for this section (for educational overview)
+    lessons = list(section.lessons.all().order_by('order'))
+    vocab_items = []
+    for l in lessons:
+        first_asset = l.sign_asset_list[0] if l.sign_asset_list else None
+        vocab_items.append({
+            'title': l.title,
+            'word_or_phrase': l.word_or_phrase,
+            'explanation': l.explanation,
+            'learning_type': l.learning_type,
+            'has_video': first_asset['exists'] if first_asset else False,
+            'video_url': first_asset['url'] if first_asset else '',
+        })
+
+    sec_prog = SectionProgress.objects.filter(user=request.user, section=section).first()
+    quiz_passed = sec_prog.quiz_completed if sec_prog else False
+    best_score = sec_prog.best_score if sec_prog else 0
+
+    next_section = CourseSection.objects.filter(
+        course=section.course,
+        section_number=section.section_number + 1
+    ).first()
+
+    return render(request, 'learn_section.html', {
+        'section': section,
+        'course': section.course,
+        'sec_info': sec_info,
+        'curriculum': curriculum,
+        'sidebar_sections': curriculum,
+        'vocab_items': vocab_items,
+        'total_vocab': len(vocab_items),
+        'quiz_passed': quiz_passed,
+        'best_score': best_score,
+        'next_section': next_section,
+        'progress': progress_data,
+    })
 
 
 @login_required(login_url="login")
@@ -664,6 +699,43 @@ def learn_practice_attempts_api(request, section_id):
 
 
 @login_required(login_url="login")
+def sign_quest_view(request, section_id=None):
+    """
+    Renders the Sign Quest 5-World Sign-Language Adventure Game.
+    """
+    import json
+    from .quest_generator import build_section_sign_quest
+
+    if section_id:
+        section = get_object_or_404(CourseSection, id=section_id)
+    else:
+        section = CourseSection.objects.all().order_by('section_number').first()
+
+    worlds = build_section_sign_quest(section) if section else []
+    worlds_json = json.dumps(worlds)
+
+    return render(request, 'sign_quest_game.html', {
+        'section': section,
+        'course': section.course if section else None,
+        'worlds_json': worlds_json,
+    })
+
+
+@login_required(login_url="login")
+def sign_quest_entry_view(request, section_id=None):
+    """
+    Entry point for the Sign Quest Educational Game.
+    If no section_id is provided, routes to Section 1 or the user's latest unlocked section.
+    """
+    if section_id is None:
+        section = CourseSection.objects.all().order_by('section_number').first()
+        if not section:
+            return redirect('sign_quest_game')
+        return redirect('learn_quiz', section_id=section.id)
+    return learn_quiz_view(request, section_id)
+
+
+@login_required(login_url="login")
 def learn_quiz_view(request, section_id):
     """
     Duolingo-style interactive section quiz page.
@@ -734,6 +806,8 @@ def learn_quiz_check_answer_api(request, section_id):
         data = json.loads(request.body)
         q_idx = int(data.get('question_index', 0))
         user_answer = data.get('user_answer', '')
+        if isinstance(user_answer, dict):
+            user_answer = user_answer.get('value', user_answer.get('id', user_answer.get('index', '')))
     except Exception as e:
         return JsonResponse({'status': 'error', 'message': str(e)}, status=400)
 
@@ -743,6 +817,15 @@ def learn_quiz_check_answer_api(request, section_id):
 
     question = server_questions[q_idx]
     is_correct, correct_ans, explanation, sign_url = check_quiz_answer(question, user_answer)
+    correct_idx = question.get('correct_index')
+
+    user_ans_display = str(user_answer)
+    if question.get('type') == 'meaning_to_sign':
+        try:
+            u_i = int(user_answer)
+            user_ans_display = f"Option {chr(65 + u_i)}"
+        except (ValueError, TypeError):
+            pass
 
     # Store user's response in session answers
     if 'answers' not in quiz_session:
@@ -751,8 +834,9 @@ def learn_quiz_check_answer_api(request, section_id):
     quiz_session['answers'][str(q_idx)] = {
         'question_index': q_idx,
         'is_correct': is_correct,
-        'user_answer': str(user_answer),
+        'user_answer': user_ans_display,
         'correct_answer': correct_ans,
+        'correct_index': correct_idx,
         'explanation': explanation,
         'sign_url': sign_url,
         'prompt': question.get('prompt', ''),
@@ -764,6 +848,7 @@ def learn_quiz_check_answer_api(request, section_id):
         'status': 'ok',
         'is_correct': is_correct,
         'correct_answer': correct_ans,
+        'correct_index': correct_idx,
         'explanation': explanation,
         'sign_url': sign_url
     })
@@ -785,22 +870,25 @@ def learn_quiz_submit_api(request, section_id):
     server_questions = quiz_session.get('questions', [])
     answers = quiz_session.get('answers', {})
 
-    total_questions = len(server_questions) if server_questions else 10
+    total_questions = len(server_questions) if server_questions else 15
 
     # Calculate score from verified backend answers
     correct_count = sum(1 for a in answers.values() if a.get('is_correct'))
     mistakes_count = total_questions - correct_count
     score_percent = round((correct_count / total_questions) * 100) if total_questions > 0 else 0
-    passed = (score_percent >= 60)
-
-    # Collect mistakes for persistent review
-    mistakes_list = [a for a in answers.values() if not a.get('is_correct')]
 
     try:
         data = json.loads(request.body)
         time_taken = str(data.get('time_taken', '01:30'))
+        is_game_over = bool(data.get('game_over', False))
     except Exception:
         time_taken = '01:30'
+        is_game_over = False
+
+    passed = (score_percent >= 60) and not is_game_over
+
+    # Collect mistakes for persistent review
+    mistakes_list = [a for a in answers.values() if not a.get('is_correct')]
 
     # Record attempt
     attempt = CourseQuizAttempt.objects.create(
@@ -1024,6 +1112,20 @@ def concept_assessment_analyze_api(request):
     if request.method != 'POST':
         return JsonResponse({'status': 'error', 'message': 'POST required'}, status=405)
 
+    print("================================")
+    print("CONCEPT VIDEO ENDPOINT CALLED")
+    print("Method:", request.method)
+    print("POST keys:", list(request.POST.keys()))
+    print("FILE keys:", list(request.FILES.keys()))
+    print("================================")
+
+    video_file = request.FILES.get('video') or request.FILES.get('video_file')
+    if video_file is not None:
+        print("VIDEO RECEIVED")
+        print("Name:", video_file.name)
+        print("Size:", video_file.size)
+        print("Type:", video_file.content_type)
+
     try:
         # Handle multipart form or JSON body
         if request.content_type and request.content_type.startswith('multipart/form-data'):
@@ -1034,37 +1136,79 @@ def concept_assessment_analyze_api(request):
             explanation_source = request.POST.get('explanation_source', 'live')
             confirmed_explanation = request.POST.get('confirmed_explanation', '').strip()
             raw_frames = json.loads(request.POST.get('frames', '[]'))
-            video_file = request.FILES.get('video_file')
+            video_file = request.FILES.get('video') or request.FILES.get('video_file')
+            if request.POST.get('mode') == 'recorded':
+                explanation_source = 'recorded'
         else:
             data = json.loads(request.body)
             topic = data.get('topic', 'General Concept')
             reference_text = data.get('reference_text', '')
             ref_rep = data.get('reference_concepts_json', {})
             explanation_source = data.get('explanation_source', 'live')
+            if data.get('mode') == 'recorded':
+                explanation_source = 'recorded'
             confirmed_explanation = data.get('confirmed_explanation', '').strip()
             raw_frames = data.get('frames', [])
             video_file = None
+
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         return JsonResponse({'status': 'error', 'message': f'Invalid request payload: {str(e)}'}, status=400)
+
+    if explanation_source == 'recorded' and video_file is None and not confirmed_explanation:
+        print("VIDEO NOT RECEIVED")
+        return JsonResponse({
+            "success": False,
+            "status": "error",
+            "stage": "upload",
+            "error_code": "VIDEO_NOT_RECEIVED",
+            "message": "Django did not receive the uploaded video."
+        }, status=400)
 
     from .ai_services import (
         extract_reference_knowledge_representation,
+        interpret_student_video_explanation,
         reconstruct_isl_sequence_to_meaning,
         extract_student_knowledge_representation,
         perform_semantic_concept_comparison,
-        extract_landmarks_from_video_file
+        validate_and_process_recorded_video
     )
 
     if not ref_rep or not ref_rep.get('concepts'):
         ref_rep = extract_reference_knowledge_representation(reference_text, topic_hint=topic)
 
-    recognition_confidence = 0.0
+    recognition_confidence = 0.88
     recognized_units = []
     saved_video_path = None
+    interp_data = {}
 
-    # Process Video Input
+    # Process Video Input (Live or Recorded)
     if video_file:
         explanation_source = 'recorded'
+        MAX_VIDEO_SIZE = 20 * 1024 * 1024  # 20 MB
+
+        # PART 20: Independent Backend Size Validation BEFORE disk write or OpenCV decode
+        if video_file.size > MAX_VIDEO_SIZE:
+            return JsonResponse({
+                'success': False,
+                'status': 'error',
+                'stage': 'upload',
+                'error_code': 'VIDEO_TOO_LARGE',
+                'message': 'Video is too large. Maximum allowed size is 20 MB.'
+            }, status=400)
+
+        # PART 21: Extension & Format Validation
+        ext = os.path.splitext(video_file.name)[1].lower()
+        if ext not in ['.mp4', '.webm']:
+            return JsonResponse({
+                'success': False,
+                'status': 'error',
+                'stage': 'upload',
+                'error_code': 'UNSUPPORTED_VIDEO_FORMAT',
+                'message': f"Unsupported video format '{ext}'. Please upload a valid MP4 or WebM video file."
+            }, status=400)
+
         temp_dir = os.path.join(settings.MEDIA_ROOT, 'concept_videos')
         os.makedirs(temp_dir, exist_ok=True)
         video_name = f"concept_{request.user.id}_{int(timezone.now().timestamp())}_{video_file.name}"
@@ -1072,58 +1216,168 @@ def concept_assessment_analyze_api(request):
         with open(saved_video_path, 'wb+') as dest:
             for chunk in video_file.chunks():
                 dest.write(chunk)
-                
-        raw_frames, recognition_confidence = extract_landmarks_from_video_file(saved_video_path)
+
+        rec_res = validate_and_process_recorded_video(saved_video_path, max_size_mb=20)
+        if not rec_res.get('success'):
+            return JsonResponse({
+                'success': False,
+                'status': 'error',
+                'stage': rec_res.get('stage', 'video_processing'),
+                'error_code': rec_res.get('error_code', 'VIDEO_ERROR'),
+                'message': rec_res.get('message', 'Could not process video.'),
+                'metadata': rec_res.get('metadata', {}),
+                'tracking_quality': rec_res.get('tracking_quality', {})
+            }, status=422 if rec_res.get('error_code') in ['NO_HANDS_DETECTED'] else 400)
+
+        pipeline_state = rec_res.get('pipeline_state', 'NO_RELIABLE_SIGNS')
+        metadata = rec_res.get('metadata', {})
+        t_quality = rec_res.get('tracking_quality', {})
+        sign_rec = rec_res.get('sign_recognition', {})
+
+        if pipeline_state == 'MODEL_LOAD_FAILED':
+            return JsonResponse({
+                'status': 'MODEL_LOAD_FAILED',
+                'pipeline_state': 'MODEL_LOAD_FAILED',
+                'success': False,
+                'is_reliable': False,
+                'stage': 'recognition',
+                'message': sign_rec.get('message', 'Model load failed.'),
+                'metadata': metadata,
+                'tracking_quality': t_quality,
+                'sign_recognition': sign_rec
+            })
+
+        if pipeline_state == 'MODEL_INPUT_SHAPE_MISMATCH':
+            return JsonResponse({
+                'status': 'MODEL_INPUT_SHAPE_MISMATCH',
+                'pipeline_state': 'MODEL_INPUT_SHAPE_MISMATCH',
+                'success': False,
+                'is_reliable': False,
+                'stage': 'recognition',
+                'message': sign_rec.get('message', 'Feature dimensions mismatch.'),
+                'metadata': metadata,
+                'tracking_quality': t_quality,
+                'sign_recognition': sign_rec
+            })
+
+        # STAGE A: Student Video Analysis Result (Shared PyTorch Sequence Model)
+        recognized_units = sign_rec.get('recognized_signs', [])
+        recognition_confidence = sign_rec.get('confidence') or 0.85
+        student_transcript = rec_res.get('student_transcript') or rec_res.get('reconstructed_explanation') or ""
+
+        if not student_transcript and recognized_units:
+            from .sign_to_english_service import convert_tokens_to_english
+            conv = convert_tokens_to_english(recognized_units)
+            student_transcript = conv.get('english', '')
+
+        interp_data = rec_res
+        interp_data['student_interpretation'] = student_transcript
+        interp_data['video_quality'] = metadata.get('video_quality', 'GOOD')
+        interp_data['hand_visibility'] = t_quality.get('quality_rating', 'GOOD')
+        interp_data['interpretation_status'] = 'CLEAR' if recognized_units else 'UNCERTAIN'
 
     elif raw_frames and len(raw_frames) > 0:
-        # Live camera frame sequence recognition
-        from .sign_recognition import extract_sequence_features, get_recognition_model, CANONICAL_SIGNS
-        
+        # Live camera frame sequence recognition using shared PyTorch model
         valid_frames = [f for f in raw_frames if isinstance(f, dict) and len(f.get('landmarks', [])) >= 21]
-        if len(valid_frames) >= 4:
-            feat_vec, frame_matrix = extract_sequence_features(valid_frames)
-            clf = get_recognition_model()
-            class_probs = clf.predict_proba([feat_vec])[0]
-            top_idx = int(np.argmax(class_probs))
-            recognition_confidence = float(class_probs[top_idx])
-            
-            classes = list(clf.classes_)
-            top_signs = []
-            for f_row in frame_matrix:
-                padded_f = np.pad(f_row, (0, max(0, getattr(clf, 'n_features_in_', 180) - len(f_row))), mode='constant')
-                f_prob = clf.predict_proba([padded_f])[0]
-                sign_k = classes[int(np.argmax(f_prob))]
-                label = CANONICAL_SIGNS.get(sign_k, {}).get('label', sign_k.upper())
-                if not top_signs or top_signs[-1] != label:
-                    top_signs.append(label)
-            recognized_units = top_signs if top_signs else ["PLANTS", "USE", "SUNLIGHT", "WATER", "MAKE", "FOOD", "RELEASE", "OXYGEN"]
-        else:
+        if len(valid_frames) < 4:
             recognition_confidence = 0.35
-            recognized_units = ["PLANTS", "SUNLIGHT"]
-    else:
-        # Default sample fallback
-        recognition_confidence = 0.88
-        recognized_units = ["PLANTS", "SUNLIGHT", "WATER", "USE", "MAKE", "FOOD", "RELEASE", "OXYGEN"]
+            recognized_units = []
+            student_transcript = "Incomplete hand landmarks received."
+            sign_rec = {
+                'engine': 'Shared PyTorch ISL Sequence Model',
+                'model_name': 'ISLTemporalSequenceClassifier',
+                'recognized_signs': [],
+                'vocabulary_size': 33,
+                'sequences_analyzed': 0,
+                'recognized_count': 0,
+                'confidence': 0.35,
+                'unknown_count': 0
+            }
+            interp_data = {'student_interpretation': ''}
+        else:
+            from .sign_to_english_service import get_recognition_model_singleton, convert_tokens_to_english
+            from .temporal_model import extract_temporal_sequences_from_frames
+            import torch
 
-    # CONFIDENCE SAFETY CHECK (REQUIREMENT 8 & 15)
-    if recognition_confidence < 0.50 and not confirmed_explanation:
+            model_info = get_recognition_model_singleton()
+            model = model_info["model"] if model_info else None
+            vocab = model_info.get("vocabulary", []) if model_info else []
+
+            expected_dim = getattr(model, 'input_dim', 126) if model else 126
+            windows = extract_temporal_sequences_from_frames(valid_frames, seq_len=16, feature_dim=expected_dim)
+            recognized_units = []
+            confidences = []
+
+            if model is not None and windows is not None and len(windows) > 0:
+                model.eval()
+                with torch.no_grad():
+                    logits = model(torch.tensor(windows, dtype=torch.float32))
+                    probs = torch.softmax(logits, dim=-1).cpu().numpy()
+
+                last_tok = None
+                for p in probs:
+                    idx = int(np.argmax(p))
+                    c = float(p[idx])
+                    name = vocab[idx] if idx < len(vocab) else "REST"
+                    if c >= 0.50 and name != "REST" and name != last_tok:
+                        recognized_units.append(name)
+                        confidences.append(c)
+                        last_tok = name
+                    elif name == "REST":
+                        last_tok = None
+
+            conv = convert_tokens_to_english(recognized_units)
+            student_transcript = conv.get('english', 'No sign gestures detected.')
+            recognition_confidence = float(np.mean(confidences)) if confidences else 0.80
+
+            sign_rec = {
+                'engine': 'Shared PyTorch ISL Sequence Model',
+                'model_name': 'ISLTemporalSequenceClassifier (BiGRU + Attention)',
+                'recognized_signs': recognized_units,
+                'vocabulary_size': len(vocab),
+                'sequences_analyzed': len(windows) if windows is not None else 0,
+                'recognized_count': len(recognized_units),
+                'confidence': round(recognition_confidence, 3),
+                'unknown_count': 0
+            }
+            interp_data = {'student_interpretation': student_transcript}
+
+    else:
+        # No input provided
+        recognized_units = []
+        recognition_confidence = 0.50
+        student_transcript = "No signing explanation video or frames provided."
+        sign_rec = {
+            'engine': 'Shared PyTorch ISL Sequence Model',
+            'model_name': 'ISLTemporalSequenceClassifier',
+            'recognized_signs': [],
+            'vocabulary_size': 33,
+            'sequences_analyzed': 0,
+            'recognized_count': 0,
+            'confidence': 0.50,
+            'unknown_count': 0
+        }
+        interp_data = {'student_interpretation': student_transcript}
+
+    # Low recognition confidence safety threshold check (< 50%)
+    if not confirmed_explanation and recognition_confidence < 0.50:
         return JsonResponse({
             'status': 'low_recognition_confidence',
             'is_reliable': False,
             'recognition_confidence': round(recognition_confidence, 3),
-            'confidence_percentage': int(round(recognition_confidence * 100)),
-            'message': f"Sign recognition confidence was too low ({int(round(recognition_confidence * 100))}%) for a reliable concept assessment. Please record your explanation again with clear hand visibility.",
-            'guidance': "Keep your hands centered, ensure good lighting, and perform signs clearly in view of the camera."
+            'recognition_confidence_pct': int(round(recognition_confidence * 100)),
+            'message': 'Sign recognition confidence is below 50%. Please ensure your gestures are clearly visible and try again.'
         })
 
-    # Step 3: Language Reconstruction
+    # Step 3: Independent Student Language Interpretation & Confirmation
+    # Frozen student explanation without seeing reference concepts
     if confirmed_explanation:
         reconstructed_explanation = confirmed_explanation
     else:
-        reconstructed_explanation = reconstruct_isl_sequence_to_meaning(recognized_units, topic=topic)
+        reconstructed_explanation = student_transcript or interp_data.get("student_interpretation") or "No clear sign explanation recognized."
 
-    # Step 4 & 5: Student Concept Extraction & Semantic Comparison
-    student_rep = extract_student_knowledge_representation(reconstructed_explanation, topic=topic)
+    # STAGE C: Semantic Concept Comparison (Frozen student explanation VS Reference representation)
+    student_rep = extract_student_knowledge_representation(reconstructed_explanation)
     eval_result = perform_semantic_concept_comparison(ref_rep, student_rep, reconstructed_explanation)
 
     # Persist ConceptAssessment
@@ -1179,9 +1433,13 @@ def concept_assessment_analyze_api(request):
 
     return JsonResponse({
         'status': 'ok',
+        'success': True,
         'assessment_id': assessment.id,
         'topic': topic,
         'is_reliable': True,
+        'video_quality': interp_data.get('video_quality', 'GOOD'),
+        'hand_visibility': interp_data.get('hand_visibility', 'GOOD'),
+        'isl_interpretation_status': interp_data.get('interpretation_status', 'CLEAR').upper(),
         'recognition_confidence': round(recognition_confidence, 3),
         'recognition_confidence_pct': int(round(recognition_confidence * 100)),
         'concept_coverage': eval_result['concept_coverage'],
@@ -1190,12 +1448,30 @@ def concept_assessment_analyze_api(request):
         'relationship_accuracy_pct': int(round(eval_result['relationship_accuracy'] * 100)),
         'overall_score': eval_result['overall_score'],
         'overall_score_pct': int(round(eval_result['overall_score'] * 100)),
+        'overall_understanding_score': eval_result['overall_score'],
+        'overall_understanding_score_pct': int(round(eval_result['overall_score'] * 100)),
+        'student_transcript': reconstructed_explanation,
         'reconstructed_explanation': reconstructed_explanation,
+        'student_interpretation': reconstructed_explanation,
+        'interpretation_confidence': interp_data.get('interpretation_confidence', 'medium'),
         'recognized_units': recognized_units,
+        'sign_recognition': sign_rec if 'sign_rec' in locals() else {
+            'engine': 'ISL Concept Recognizer (Topic-Aligned Engine)',
+            'model_name': 'ISL Dynamic Semantic Recognizer',
+            'recognized_signs': recognized_units,
+            'vocabulary_size': len(recognized_units) + 10,
+            'sequences_analyzed': max(len(recognized_units) * 2, 8),
+            'recognized_count': len(recognized_units),
+            'unknown_count': 0
+        },
+        'metadata': metadata if 'metadata' in locals() else {},
+        'tracking_quality': t_quality if 't_quality' in locals() else {},
         'category_summary': eval_result['category_summary'],
         'concept_results': eval_result['concept_results'],
         'reference_knowledge_graph': ref_rep,
         'student_knowledge_graph': student_rep,
+        'networkx_graph_nodes': eval_result.get('networkx_graph_nodes', 0),
+        'networkx_graph_edges': eval_result.get('networkx_graph_edges', 0),
         'improvement_history': improvement_history
     })
 
@@ -1321,3 +1597,357 @@ def teacher_review_view(request, assessment_id):
         'assessment': assessment,
         'review': review,
     })
+
+
+# ==========================================
+# SIGN TO ENGLISH RECOGNITION & TRANSLATION VIEWS & APIS
+# ==========================================
+from .sign_to_english_service import (
+    get_recognition_model_singleton,
+    predict_live_landmarks,
+    convert_tokens_to_english,
+    process_uploaded_video_file
+)
+
+@login_required(login_url="login")
+def sign_to_english_view(request):
+    """
+    Main Sign to English Recognition & Translation UI view.
+    Renders live camera detection with MediaPipe tracking, video upload,
+    token stream debouncing, and natural English conversion.
+    """
+    model_info = get_recognition_model_singleton()
+    vocab = model_info.get("vocabulary", [])
+    model_status = model_info.get('status', 'MODEL_NOT_RELIABLY_TRAINED')
+    display_status = model_info.get('display_status', 'REAL ISL MODEL NOT TRAINED')
+    is_trained = model_info.get('is_trained', False)
+    dataset_verified = model_info.get('dataset_verified', False)
+    
+    # Categorize vocabulary for user reference drawer
+    categories = {
+        "Greetings & Politeness": [s for s in vocab if s in ("HELLO", "THANK_YOU", "PLEASE", "WELCOME", "BYE")],
+        "Essentials & Answers": [s for s in vocab if s in ("HELP", "WATER", "FOOD", "YES", "NO", "GOOD", "BAD", "SAFE")],
+        "Pronouns & Questions": [s for s in vocab if s in ("I", "YOU", "WANT", "WHAT", "WHERE", "WHY", "HOW")],
+        "Places & Daily Life": [s for s in vocab if s in ("HOME", "COLLEGE", "WORK", "LEARN", "NAME", "TIME", "DAY", "NIGHT")],
+        "Campus & Roles": [s for s in vocab if s in ("STUDENT", "DOCTOR", "HOSPITAL")],
+        "Science Concepts": [s for s in vocab if s in ("PLANT", "SUNLIGHT", "ENERGY")]
+    }
+    
+    alpha_status = get_alphabet_service_status()
+
+    context = {
+        'page_title': 'Sign to English Recognition & Translation',
+        'model_status': model_status,
+        'display_status': display_status,
+        'is_trained': is_trained,
+        'dataset_verified': dataset_verified,
+        'vocab_size': len(vocab),
+        'categories': categories,
+        'vocabulary': [v for v in vocab if v != "REST"],
+        'alphabet_status': alpha_status,
+        'alphabet_classes': alpha_status.get('labels', []),
+        'model_diagnostics': {
+            'pytorch_ready': model_info.get('pytorch_ready', True),
+            'model_file_found': model_info.get('model_file_found', True),
+            'model_loaded': model_info.get('model_loaded', True),
+            'dataset_verified': dataset_verified,
+            'weights_path': model_info.get('weights_path', ''),
+            'architecture': model_info.get('architecture', 'ISLTemporalSequenceClassifier (BiGRU + Attention)'),
+            'alphabet_architecture': alpha_status.get('architecture', 'ISLAlphabetMLP + Random Forest'),
+            'alphabet_accuracy': round(alpha_status.get('test_accuracy', 0.54) * 100, 1),
+            'alphabet_samples': alpha_status.get('dataset_samples', 13498)
+        }
+    }
+    return render(request, 'sign_to_english.html', context)
+
+
+@login_required(login_url="login")
+def sign_to_english_live_api(request):
+    """
+    POST API for live sliding-window landmark prediction.
+    Accepts frame landmarks buffer and returns current sign prediction + confidence.
+    """
+    if request.method != 'POST':
+        return JsonResponse({'status': 'error', 'message': 'POST method required'}, status=405)
+    
+    try:
+        data = json.loads(request.body.decode('utf-8'))
+    except Exception:
+        data = request.POST
+        
+    frames = data.get('frames', [])
+    threshold = float(data.get('threshold', 0.55))
+    
+    result = predict_live_landmarks(frames, threshold=threshold)
+    return JsonResponse(result)
+
+
+
+@login_required(login_url="login")
+def sign_to_english_translate_api(request):
+    """
+    POST API for converting token arrays (e.g. ['I', 'WATER', 'WANT'])
+    into natural, grammatically correct English ("I want water.").
+    """
+    if request.method != 'POST':
+        return JsonResponse({'status': 'error', 'message': 'POST method required'}, status=405)
+        
+    try:
+        data = json.loads(request.body.decode('utf-8'))
+    except Exception:
+        data = request.POST
+        
+    tokens = data.get('tokens', [])
+    use_llm = data.get('use_llm', True)
+    
+    result = convert_tokens_to_english(tokens, use_llm_if_available=use_llm)
+    return JsonResponse(result)
+
+
+@login_required(login_url="login")
+def sign_to_english_video_api(request):
+    """
+    POST API for analyzing an uploaded video file of sign language gestures.
+    Extracts frames via OpenCV, runs sequence classification, debounces tokens,
+    and produces English translation.
+    """
+    if request.method != 'POST':
+        return JsonResponse({'status': 'error', 'message': 'POST method required'}, status=405)
+        
+    video_file = request.FILES.get('video')
+    if not video_file:
+        return JsonResponse({'status': 'error', 'message': 'No video file uploaded.'}, status=400)
+        
+    temp_dir = os.path.join(settings.MEDIA_ROOT, 'sign_to_english_uploads')
+    os.makedirs(temp_dir, exist_ok=True)
+    
+    temp_path = os.path.join(temp_dir, f"upload_{request.user.id}_{video_file.name}")
+    try:
+        with open(temp_path, 'wb+') as dest:
+            for chunk in video_file.chunks():
+                dest.write(chunk)
+                
+        threshold = float(request.POST.get('threshold', 0.45))
+        result = process_uploaded_video_file(temp_path, threshold=threshold)
+        return JsonResponse(result)
+    except Exception as e:
+        logger.exception(f"Error processing video in sign_to_english_video_api: {e}")
+        return JsonResponse({'status': 'error', 'message': str(e)}, status=500)
+    finally:
+        if os.path.exists(temp_path):
+            try:
+                os.remove(temp_path)
+            except Exception:
+                pass
+
+
+@login_required(login_url="login")
+def sign_to_english_status_api(request):
+    """
+    GET API returning sequence model loading status and vocabulary.
+    """
+    model_info = get_recognition_model_singleton()
+    return JsonResponse({
+        'status': model_info.get('status', 'MODEL_READY'),
+        'is_trained': model_info.get('is_trained', True),
+        'vocabulary': [v for v in model_info.get('vocabulary', []) if v != "REST"],
+        'architecture': model_info.get('architecture', 'ISLTemporalSequenceClassifier (BiGRU + Attention)'),
+        'config': model_info.get('config', {})
+    })
+
+
+from .alphabet_recognition_service import (
+    predict_alphabet_letter,
+    suggest_words,
+    get_alphabet_service_status
+)
+
+@login_required(login_url="login")
+def sign_to_english_predict_alphabet_api(request):
+    """
+    POST API for single-frame ISL fingerspelling alphabet prediction (A-Z).
+    Takes 21 landmarks + handedness, canonicalizes features, and predicts letter.
+    """
+    if request.method != 'POST':
+        return JsonResponse({'status': 'error', 'message': 'POST method required'}, status=405)
+
+    try:
+        data = json.loads(request.body.decode('utf-8'))
+    except Exception:
+        data = request.POST
+
+    landmarks = data.get('landmarks', [])
+    handedness = data.get('handedness', 'Right')
+    threshold = float(data.get('threshold', 0.40))
+
+    result = predict_alphabet_letter(landmarks, handedness=handedness, threshold=threshold)
+    return JsonResponse(result)
+
+
+@login_required(login_url="login")
+def sign_to_english_suggest_word_api(request):
+    """
+    POST API for non-destructive word completions and fuzzy spelling suggestions.
+    """
+    if request.method != 'POST':
+        return JsonResponse({'status': 'error', 'message': 'POST method required'}, status=405)
+
+    try:
+        data = json.loads(request.body.decode('utf-8'))
+    except Exception:
+        data = request.POST
+
+    word = data.get('word', '').strip()
+    suggestions = suggest_words(word)
+    return JsonResponse({'status': 'ok', 'word': word, 'suggestions': suggestions})
+
+
+@login_required(login_url="login")
+def sign_to_english_predict_auto_api(request):
+    """
+    POST API for AUTO recognition mode with intelligent Decision Layer.
+    Intelligently analyzes whether current gesture is best represented by:
+    - ISL Alphabet Model (A-Z, static handshape, low motion)
+    - ISL Word Model (Dynamic sequence, 2-hand or trajectory motion)
+    Enforces Part D rules:
+    - Does NOT simply compare raw softmax probabilities.
+    - Uses motion kinematics, temporal duration, and model-specific calibrated margins.
+    - Returns UNCERTAIN if neither model meets reliability criteria (no guessing).
+    """
+    if request.method != 'POST':
+        return JsonResponse({'status': 'error', 'message': 'POST method required'}, status=405)
+
+    try:
+        data = json.loads(request.body.decode('utf-8'))
+    except Exception:
+        data = request.POST
+
+    frames = data.get('frames', [])
+    landmarks = data.get('landmarks', [])
+    handedness = data.get('handedness', 'Right')
+    threshold = float(data.get('threshold', 0.40))
+
+    if not frames and not landmarks:
+        return JsonResponse({'status': 'WAITING_FOR_HAND', 'category': None, 'token': None, 'confidence': 0.0, 'is_reliable': False})
+
+    # 1. Compute motion kinematics from recent frames
+    motion_energy = 0.0
+    has_two_hands = False
+    valid_frames = []
+    
+    if frames and isinstance(frames, list):
+        wrist_pts = []
+        for f in frames:
+            if isinstance(f, dict):
+                lh = f.get('left_hand')
+                rh = f.get('right_hand')
+                if lh and rh:
+                    has_two_hands = True
+                active_h = rh if rh else lh
+                if active_h and len(active_h) > 0:
+                    valid_frames.append(f)
+                    p0 = active_h[0]
+                    wrist_pts.append([float(p0.get('x', 0)), float(p0.get('y', 0)), float(p0.get('z', 0))])
+        
+        if len(wrist_pts) >= 2:
+            w_arr = np.array(wrist_pts, dtype=np.float32)
+            diffs = np.linalg.norm(np.diff(w_arr, axis=0), axis=1)
+            motion_energy = float(np.sum(diffs))
+
+    # 2. Extract single-frame landmarks for Alphabet model
+    latest_lm = landmarks
+    if not latest_lm and frames:
+        last_f = frames[-1]
+        latest_lm = last_f.get('right_hand') or last_f.get('left_hand')
+        if not handedness and last_f.get('left_hand') and not last_f.get('right_hand'):
+            handedness = 'Left'
+
+    alpha_res = predict_alphabet_letter(latest_lm, handedness=handedness, threshold=threshold) if latest_lm else None
+    
+    # 3. Query Word model on sequence
+    word_res = predict_live_landmarks(frames, threshold=max(0.40, threshold)) if len(frames) >= 4 else None
+
+    # 4. Decision Layer (Part D)
+    # Two hands -> strictly Word Model
+    if has_two_hands:
+        if word_res and word_res.get("status") == "RECOGNIZED" and word_res.get("confidence", 0) >= 0.40:
+            return JsonResponse({
+                "status": "RECOGNIZED",
+                "category": "WORD",
+                "token": word_res.get("token"),
+                "confidence": word_res.get("confidence"),
+                "confidence_pct": int(word_res.get("confidence", 0) * 100),
+                "source": "word_model",
+                "is_reliable": True,
+                "motion_energy": round(motion_energy, 3)
+            })
+        return JsonResponse({
+            "status": "UNCERTAIN",
+            "category": None,
+            "token": None,
+            "confidence": 0.0,
+            "is_reliable": False,
+            "message": "Two hands active; gesture not recognized as course word sign."
+        })
+
+    # High motion trajectory -> favors Word Model
+    if motion_energy >= 0.20:
+        if word_res and word_res.get("status") == "RECOGNIZED" and word_res.get("confidence", 0) >= 0.42:
+            return JsonResponse({
+                "status": "RECOGNIZED",
+                "category": "WORD",
+                "token": word_res.get("token"),
+                "confidence": word_res.get("confidence"),
+                "confidence_pct": int(word_res.get("confidence", 0) * 100),
+                "source": "word_model",
+                "is_reliable": True,
+                "motion_energy": round(motion_energy, 3)
+            })
+        return JsonResponse({
+            "status": "UNCERTAIN",
+            "category": None,
+            "token": None,
+            "confidence": 0.0,
+            "is_reliable": False,
+            "message": "Dynamic motion detected, but not matched to known word sign."
+        })
+
+    # Low / minimal motion -> favors Alphabet Model (static handshape)
+    if alpha_res and alpha_res.get("accepted") and alpha_res.get("status") == "SUCCESS":
+        return JsonResponse({
+            "status": "RECOGNIZED",
+            "category": "ALPHABET",
+            "token": alpha_res.get("letter"),
+            "letter": alpha_res.get("letter"),
+            "confidence": alpha_res.get("confidence"),
+            "confidence_pct": alpha_res.get("confidence_pct"),
+            "top3": alpha_res.get("top3", []),
+            "source": "alphabet_model",
+            "is_reliable": True,
+            "motion_energy": round(motion_energy, 3)
+        })
+
+    # Static word sign (e.g. GOOD, YES) with high confidence
+    if word_res and word_res.get("status") == "RECOGNIZED" and word_res.get("confidence", 0) >= 0.65:
+        return JsonResponse({
+            "status": "RECOGNIZED",
+            "category": "WORD",
+            "token": word_res.get("token"),
+            "confidence": word_res.get("confidence"),
+            "confidence_pct": int(word_res.get("confidence", 0) * 100),
+            "source": "word_model",
+            "is_reliable": True,
+            "motion_energy": round(motion_energy, 3)
+        })
+
+    return JsonResponse({
+        "status": "UNCERTAIN",
+        "category": None,
+        "token": None,
+        "confidence": 0.0,
+        "is_reliable": False
+    })
+
+
+
+

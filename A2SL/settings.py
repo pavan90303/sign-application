@@ -32,13 +32,17 @@ for pkg in ['averaged_perceptron_tagger', 'wordnet', 'omw-1.4']:
             pass
 
 # Quick-start development settings - unsuitable for production
-# See https://docs.djangoproject.com/en/3.0/howto/deployment/checklist/
+try:
+    from dotenv import load_dotenv
+    load_dotenv(os.path.join(BASE_DIR, '.env'))
+except ImportError:
+    pass
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = '3k7=!d39#4@_&5a6to&4=_=j(c^v0(vv91cj5+9e8+d4&+01jb'
+SECRET_KEY = os.environ.get('SECRET_KEY', 'django-insecure-3k7=!d39#4@_&5a6to&4=_=j(c^v0(vv91cj5+9e8+d4&+01jb')
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = os.environ.get('DEBUG', 'True').lower() in ('true', '1', 'yes')
 
 ALLOWED_HOSTS = ['*']
 
@@ -53,6 +57,14 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'study_companion',
+    'apps.accounts',
+    'apps.dashboard',
+    'apps.upload',
+    'apps.live_converter',
+    'apps.learning',
+    'apps.quiz',
+    'apps.sign_to_english',
+    'apps.concept_assessment',
 ]
 
 
@@ -71,7 +83,10 @@ ROOT_URLCONF = 'A2SL.urls'
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': ['templates',],
+        'DIRS': [
+            os.path.join(BASE_DIR, 'templates'),
+            os.path.join(BASE_DIR, 'shared', 'templates'),
+        ],
         'APP_DIRS': True,
         'OPTIONS': {
             'context_processors': [
@@ -137,12 +152,17 @@ USE_TZ = True
 STATIC_URL = '/static/'
 
 STATICFILES_DIRS = [    
-    os.path.join(BASE_DIR,"assets"),
+    os.path.join(BASE_DIR, "assets"),
+    os.path.join(BASE_DIR, "static"),
 ]
 
 # Media files (PPT uploads)
 MEDIA_URL = '/media/'
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
+
+# Upload size limits (50 MB)
+DATA_UPLOAD_MAX_MEMORY_SIZE = 52428800
+FILE_UPLOAD_MAX_MEMORY_SIZE = 52428800
 
 # Google Gemini API Key
 import os
@@ -150,3 +170,4 @@ GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY', 'PLACEHOLDER_KEY')
 
 # Login URL
 LOGIN_URL = 'login'
+

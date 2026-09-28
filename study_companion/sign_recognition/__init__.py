@@ -827,7 +827,7 @@ def analyze_practice_sign(section_id, expected_sign_input, raw_frames, user=None
     5. Calculates reference similarity.
     6. Returns structured response and saves PracticeAttempt.
     """
-    from .models import CourseSection, Lesson, PracticeAttempt
+    from study_companion.models import CourseSection, Lesson, PracticeAttempt
 
     section = CourseSection.objects.filter(id=section_id).first()
     if not section:
@@ -1018,7 +1018,7 @@ def lookup_sign_for_practice(section_id, query):
     - If in another section -> returns informative message that it belongs to another section.
     - If unknown -> displays available signs in the section.
     """
-    from .models import CourseSection, Lesson
+    from study_companion.models import CourseSection, Lesson
 
     section = CourseSection.objects.filter(id=section_id).first()
     if not section:
@@ -1094,3 +1094,19 @@ def lookup_sign_for_practice(section_id, query):
         "message": f"'{raw_query}' is not available in {section.title}.",
         "available_signs": sample_available
     }
+
+
+# =====================================================================
+# 8. TEMPORAL SEQUENCE MODEL INTEGRATION FOR CONTINUOUS ISL
+# =====================================================================
+from study_companion.temporal_model import (
+    CONTROLLED_VOCABULARY,
+    ISLTemporalSequenceClassifier,
+    load_temporal_recognition_model,
+    extract_temporal_sequences_from_frames,
+    run_temporal_sign_recognition,
+    TOKEN_TO_CONCEPT_MAP,
+    SEQUENCE_LENGTH,
+    FEATURE_DIM
+)
+

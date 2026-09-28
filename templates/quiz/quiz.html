@@ -1,0 +1,581 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block page_title %}Knowledge Check{% endblock %}
+{% block page_subtitle %}Test your understanding of "{{ upload.title }}"{% endblock %}
+
+{% block content %}
+<div class="h-[calc(100vh-12rem)] min-h-[600px] flex justify-center items-center py-6">
+
+    <!-- Config Screen -->
+    <div id="quiz-config" class="w-full max-w-2xl">
+        <div class="glass-panel p-10 rounded-3xl text-center relative overflow-hidden">
+            <div
+                class="absolute top-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-white/20 to-transparent">
+            </div>
+
+            <div class="mb-8">
+                <div
+                    class="w-20 h-20 rounded-2xl bg-gradient-to-br from-primary to-indigo-600 flex items-center justify-center mx-auto mb-6 shadow-2xl shadow-primary/30 rotate-3">
+                    <span class="material-icons-round text-4xl text-white">quiz</span>
+                </div>
+                <h2 class="text-3xl font-bold text-white mb-3">Configure Quiz</h2>
+                <p class="text-slate-400">Customize your assessment for <br><span class="text-white font-medium">"{{
+                        upload.title }}"</span></p>
+            </div>
+
+            <form id="quiz-config-form" class="space-y-6 max-w-md mx-auto">
+                <div class="space-y-4">
+                    <div class="text-left">
+                        <label
+                            class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 block">Difficulty</label>
+                        <div class="grid grid-cols-3 gap-3">
+                            <label class="cursor-pointer relative">
+                                <input type="radio" name="difficulty" value="Easy" class="peer sr-only">
+                                <div
+                                    class="p-3 rounded-xl border border-white/5 bg-white/5 text-center transition-all peer-checked:bg-emerald-500/20 peer-checked:border-emerald-500 peer-checked:text-emerald-400 hover:bg-white/10">
+                                    Easy
+                                </div>
+                            </label>
+                            <label class="cursor-pointer relative">
+                                <input type="radio" name="difficulty" value="Medium" checked class="peer sr-only">
+                                <div
+                                    class="p-3 rounded-xl border border-white/5 bg-white/5 text-center transition-all peer-checked:bg-primary/20 peer-checked:border-primary peer-checked:text-white hover:bg-white/10">
+                                    Medium
+                                </div>
+                            </label>
+                            <label class="cursor-pointer relative">
+                                <input type="radio" name="difficulty" value="Hard" class="peer sr-only">
+                                <div
+                                    class="p-3 rounded-xl border border-white/5 bg-white/5 text-center transition-all peer-checked:bg-rose-500/20 peer-checked:border-rose-500 peer-checked:text-rose-400 hover:bg-white/10">
+                                    Hard
+                                </div>
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="text-left relative z-50">
+                        <label class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 block">Number of
+                            Questions</label>
+
+                        <!-- Custom Dropdown -->
+                        <div class="relative">
+                            <input type="hidden" name="num_questions" id="num_questions_input" value="5">
+
+                            <button type="button" id="dropdown-trigger"
+                                class="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white flex items-center justify-between hover:bg-white/10 transition-colors focus:border-primary focus:ring-1 focus:ring-primary outline-none text-left">
+                                <span id="selected-question-text">5 Questions</span>
+                                <span class="material-icons-round text-slate-400 transition-transform duration-200"
+                                    id="dropdown-arrow">expand_more</span>
+                            </button>
+
+                            <div id="dropdown-menu"
+                                class="absolute top-full left-0 right-0 mt-2 bg-[#1e293b] border border-white/10 rounded-xl shadow-xl overflow-hidden hidden transform origin-top transition-all duration-200 z-50">
+                                <div class="p-1">
+                                    <div class="dropdown-item px-4 py-2.5 rounded-lg text-slate-300 hover:text-white hover:bg-white/10 cursor-pointer transition-colors flex items-center justify-between"
+                                        onclick="selectQuestionCount(3, '3 Questions')">
+                                        <span>3 Questions</span>
+                                    </div>
+                                    <div class="dropdown-item px-4 py-2.5 rounded-lg text-white bg-primary/10 hover:bg-primary/20 cursor-pointer transition-colors flex items-center justify-between"
+                                        onclick="selectQuestionCount(5, '5 Questions')">
+                                        <span>5 Questions</span>
+                                        <span class="material-icons-round text-primary text-sm">check</span>
+                                    </div>
+                                    <div class="dropdown-item px-4 py-2.5 rounded-lg text-slate-300 hover:text-white hover:bg-white/10 cursor-pointer transition-colors flex items-center justify-between"
+                                        onclick="selectQuestionCount(10, '10 Questions')">
+                                        <span>10 Questions</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="pt-4">
+                    <button type="submit"
+                        class="w-full py-4 rounded-xl bg-gradient-to-r from-primary to-indigo-600 font-bold text-white shadow-lg shadow-primary/25 hover:shadow-primary/40 hover:-translate-y-1 transition-all flex items-center justify-center gap-2 group">
+                        Start Quiz
+                        <span
+                            class="material-icons-round group-hover:translate-x-1 transition-transform">arrow_forward</span>
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Loading Screen -->
+    <div id="quiz-loading" class="hidden text-center">
+        <div class="w-16 h-16 border-4 border-primary/30 border-t-primary rounded-full animate-spin mx-auto mb-6"></div>
+        <h3 class="text-xl font-medium text-white mb-2">Generating Questions...</h3>
+        <p class="text-slate-400">Analyzing content using AI</p>
+    </div>
+
+    <!-- Quiz Interface (Question Card) -->
+    <div id="quiz-interface" class="hidden w-full max-w-4xl h-full flex flex-col relative">
+        <!-- Progress Header -->
+        <div class="flex-none flex items-center justify-between mb-4 px-2 pt-2">
+            <button id="quit-quiz" class="flex items-center gap-2 text-slate-400 hover:text-white transition-colors">
+                <span class="material-icons-round">close</span>
+                <span class="text-sm font-medium">Quit</span>
+            </button>
+            <div class="flex-1 max-w-md mx-8">
+                <div class="flex justify-between text-xs text-slate-400 mb-2">
+                    <span id="progress-text">Question 1 of 5</span>
+                    <span id="progress-percent">20%</span>
+                </div>
+                <div class="h-1.5 bg-white/10 rounded-full overflow-hidden">
+                    <div id="progress-bar" class="h-full bg-primary transition-all duration-500" style="width: 20%">
+                    </div>
+                </div>
+            </div>
+            <div class="flex items-center gap-2 text-slate-400">
+                <span class="material-icons-round text-sm">timer</span>
+                <span class="text-sm font-mono" id="timer">00:00</span>
+            </div>
+        </div>
+
+        <!-- Scrollable Question Area -->
+        <div class="flex-1 overflow-y-auto pb-24 scrollbar-hide"> <!-- pb-24 for footer space -->
+            <div
+                class="glass-panel rounded-3xl p-8 md:p-12 relative overflow-hidden min-h-full flex flex-col justify-center">
+                <div
+                    class="absolute top-0 right-0 p-32 bg-primary/5 rounded-full blur-3xl pointer-events-none -mt-10 -mr-10">
+                </div>
+
+                <div class="relative z-10 max-w-2xl mx-auto w-full">
+                    <span
+                        class="inline-block px-3 py-1 bg-white/5 border border-white/10 rounded-lg text-xs font-medium text-primary mb-6">Multiple
+                        Choice</span>
+
+                    <h3 id="question-text" class="text-2xl md:text-3xl font-bold text-white leading-tight mb-8">
+                        <!-- Question goes here -->
+                    </h3>
+
+                    <div id="options-container" class="space-y-4">
+                        <!-- Options injected by JS -->
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Sticky Footer Navigation -->
+        <div
+            class="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-[#0f172a] via-[#0f172a] to-transparent z-20">
+            <div
+                class="max-w-2xl mx-auto w-full flex justify-between items-center bg-[#1e293b]/80 backdrop-blur-md border border-white/10 p-2 rounded-2xl shadow-xl">
+                <button id="prev-btn"
+                    class="px-6 py-2.5 rounded-xl text-slate-400 hover:text-white hover:bg-white/5 font-medium transition-colors disabled:opacity-30 disabled:cursor-not-allowed flex items-center gap-2"
+                    disabled>
+                    <span class="material-icons-round text-lg">arrow_back</span>
+                    Previous
+                </button>
+
+                <button id="next-btn"
+                    class="px-8 py-2.5 rounded-xl bg-white text-slate-900 font-bold hover:bg-slate-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                    disabled>
+                    Next Question
+                    <span class="material-icons-round text-lg">arrow_forward</span>
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    const sessionId = "{{ upload.id }}";
+    const configScreen = document.getElementById('quiz-config');
+    const loadingScreen = document.getElementById('quiz-loading');
+    const quizInterface = document.getElementById('quiz-interface');
+    const optionsContainer = document.getElementById('options-container');
+    const questionText = document.getElementById('question-text');
+    const nextBtn = document.getElementById('next-btn');
+    const prevBtn = document.getElementById('prev-btn');
+    const progressBar = document.getElementById('progress-bar');
+    const progressText = document.getElementById('progress-text');
+    const progressPercent = document.getElementById('progress-percent');
+
+    let questions = [];
+    let currentQuestionIndex = 0;
+    let score = 0;
+    let userAnswers = [];
+
+    // Form Submit -> Start Quiz
+    document.getElementById('quiz-config-form').addEventListener('submit', async function (e) {
+        e.preventDefault();
+
+        const formData = new FormData(this);
+        const params = new URLSearchParams(formData);
+
+        // Show loading
+        configScreen.classList.add('hidden');
+        loadingScreen.classList.remove('hidden');
+
+        try {
+            // Fetch questions from API
+            const response = await fetch(`{% url 'quiz_data_api' upload.id %}?${params.toString()}`);
+            const data = await response.json();
+
+            if (response.ok && data.questions && data.questions.length > 0) {
+                questions = data.questions;
+                startQuiz();
+            } else {
+                const errorMsg = data.error || 'Could not generate questions from this file. Please verify content and try again.';
+                showQuizError(errorMsg);
+            }
+        } catch (error) {
+            console.error('Error fetching quiz:', error);
+            showQuizError('An unexpected network error occurred while generating the quiz. Please try again.');
+        }
+    });
+
+    function showQuizError(msg) {
+        loadingScreen.classList.add('hidden');
+        configScreen.classList.remove('hidden');
+        let errorEl = document.getElementById('quiz-error-banner');
+        if (!errorEl) {
+            errorEl = document.createElement('div');
+            errorEl.id = 'quiz-error-banner';
+            errorEl.className = 'mb-6 p-4 rounded-2xl bg-rose-500/10 border border-rose-500/20 text-rose-200 text-sm text-left flex items-start gap-3 animate-fade-in';
+            const form = document.getElementById('quiz-config-form');
+            form.parentNode.insertBefore(errorEl, form);
+        }
+        errorEl.innerHTML = `
+            <span class="material-icons-round text-rose-400 text-xl shrink-0 mt-0.5">error_outline</span>
+            <div>
+                <p class="font-bold text-white text-sm mb-1">Quiz Generation Notice</p>
+                <p class="text-slate-300 text-xs leading-relaxed">${msg}</p>
+            </div>
+        `;
+        errorEl.classList.remove('hidden');
+    }
+
+    function startQuiz() {
+        loadingScreen.classList.add('hidden');
+        quizInterface.classList.remove('hidden');
+        currentQuestionIndex = 0;
+        score = 0;
+        userAnswers = [];
+        showQuestion(currentQuestionIndex);
+        updateProgress();
+        startTimer();
+    }
+
+    function showQuestion(index) {
+        const q = questions[index];
+        questionText.textContent = q.question;
+        optionsContainer.innerHTML = '';
+
+        // Navigation State
+        prevBtn.disabled = index === 0;
+
+        // Check if already answered
+        const answered = userAnswers[index] !== undefined;
+        nextBtn.disabled = !answered;
+        if (index === questions.length - 1) {
+            nextBtn.innerHTML = `Finish Quiz <span class="material-icons-round text-lg">flag</span>`;
+        } else {
+            nextBtn.innerHTML = `Next Question <span class="material-icons-round text-lg">arrow_forward</span>`;
+        }
+
+        q.options.forEach((opt, i) => {
+            const btn = document.createElement('button');
+            const isSelected = userAnswers[index] === i;
+
+            // Base Class
+            let className = 'w-full text-left p-5 rounded-xl border border-white/5 bg-white/5 hover:bg-white/10 transition-all group flex items-start gap-4 transition-all duration-200';
+
+            // Logic for styling if already answered
+            if (answered) {
+                btn.disabled = true; // Review mode: cannot change answer for now (simplification)
+                const q = questions[currentQuestionIndex];
+                const isCorrectAnswer = (q.correct_answer === opt) || (q.options[q.correct_index] === opt);
+                const isUserChoice = (userAnswers[index] === i);
+
+                if (isUserChoice) {
+                    if (isCorrectAnswer) {
+                        // User chose correct
+                        className = 'w-full text-left p-5 rounded-xl border border-emerald-500 bg-emerald-500/20 flex items-start gap-4';
+                    } else {
+                        // User chose incorrect
+                        className = 'w-full text-left p-5 rounded-xl border border-rose-500 bg-rose-500/20 flex items-start gap-4';
+                    }
+                } else if (isCorrectAnswer) {
+                    // Show correct answer even if not chosen
+                    className = 'w-full text-left p-5 rounded-xl border border-emerald-500 bg-emerald-500/20 flex items-start gap-4 opacity-70';
+                } else {
+                    className += ' opacity-50';
+                }
+            }
+
+            btn.className = className;
+
+            let radioContent = `
+                <div class="w-6 h-6 rounded-full border border-slate-500 flex items-center justify-center shrink-0 mt-0.5 group-hover:border-white transition-colors radio-circle">
+                    <div class="w-2.5 h-2.5 rounded-full bg-white opacity-0 transition-opacity"></div>
+                </div>
+            `;
+
+            // Update radio content if answered
+            if (answered) {
+                const q = questions[currentQuestionIndex];
+                const isCorrectAnswer = (q.correct_answer === opt) || (q.options[q.correct_index] === opt);
+                const isUserChoice = (userAnswers[index] === i);
+
+                if (isUserChoice) {
+                    if (isCorrectAnswer) {
+                        radioContent = `<div class="w-6 h-6 rounded-full border border-emerald-500 bg-emerald-500 flex items-center justify-center shrink-0 mt-0.5"><span class="material-icons-round text-white text-sm">check</span></div>`;
+                    } else {
+                        radioContent = `<div class="w-6 h-6 rounded-full border border-rose-500 bg-rose-500 flex items-center justify-center shrink-0 mt-0.5"><span class="material-icons-round text-white text-sm">close</span></div>`;
+                    }
+                } else if (isCorrectAnswer) {
+                    radioContent = `<div class="w-6 h-6 rounded-full border border-emerald-500 bg-emerald-500 flex items-center justify-center shrink-0 mt-0.5"><span class="material-icons-round text-white text-sm">check</span></div>`;
+                }
+            }
+
+            btn.innerHTML = `
+                ${radioContent}
+                <span class="text-slate-300 font-medium group-hover:text-white text-lg">${opt}</span>
+            `;
+
+            if (!answered) {
+                btn.onclick = () => selectOption(i, btn);
+            }
+            optionsContainer.appendChild(btn);
+        });
+
+        // If answered, show explanation
+        if (answered) {
+            const explanationDiv = document.createElement('div');
+            explanationDiv.className = 'mt-6 p-4 rounded-xl bg-white/5 border border-white/5 animate-fade-in';
+            explanationDiv.innerHTML = `
+                <div class="flex items-start gap-3">
+                    <span class="material-icons-round text-primary mt-0.5">lightbulb</span>
+                    <div>
+                        <h4 class="text-sm font-bold text-white mb-1">Explanation</h4>
+                        <p class="text-sm text-slate-300">${q.explanation || "No explanation provided."}</p>
+                    </div>
+                </div>
+            `;
+            optionsContainer.appendChild(explanationDiv);
+        }
+    }
+
+    function selectOption(index, btnElement) {
+        // Prevent changing answer
+        if (userAnswers[currentQuestionIndex] !== undefined) return;
+
+        // Disable all buttons
+        const allBtns = optionsContainer.querySelectorAll('button');
+        allBtns.forEach(b => b.disabled = true);
+
+        // Check if correct
+        const q = questions[currentQuestionIndex];
+        const selectedOption = q.options[index];
+        const isCorrect = (q.correct_answer === selectedOption);
+
+        // Highlight selected
+        btnElement.classList.remove('bg-white/5', 'border-white/5', 'hover:bg-white/10');
+        if (isCorrect) {
+            btnElement.classList.add('bg-emerald-500/20', 'border-emerald-500');
+            btnElement.querySelector('.radio-circle').classList.add('border-emerald-500', 'bg-emerald-500');
+            btnElement.querySelector('.radio-circle').innerHTML = '<span class="material-icons-round text-white text-sm">check</span>';
+            // Also fill radio
+            btnElement.querySelector('.radio-circle').classList.remove('border-slate-500');
+        } else {
+            btnElement.classList.add('bg-rose-500/20', 'border-rose-500');
+            btnElement.querySelector('.radio-circle').classList.add('border-rose-500', 'bg-rose-500');
+            btnElement.querySelector('.radio-circle').innerHTML = '<span class="material-icons-round text-white text-sm">close</span>';
+
+            // Highlight correct answer
+            q.options.forEach((opt, i) => {
+                if (opt === q.correct_answer) {
+                    const correctBtn = allBtns[i];
+                    correctBtn.classList.remove('opacity-50');
+                    correctBtn.classList.add('bg-emerald-500/20', 'border-emerald-500');
+                    correctBtn.querySelector('.radio-circle').classList.add('border-emerald-500', 'bg-emerald-500');
+                    correctBtn.querySelector('.radio-circle').innerHTML = '<span class="material-icons-round text-white text-sm">check</span>';
+                    correctBtn.querySelector('.radio-circle').classList.remove('border-slate-500');
+                }
+            });
+        }
+
+        // Show Explanation
+        const explanationDiv = document.createElement('div');
+        explanationDiv.className = 'mt-6 p-4 rounded-xl bg-white/5 border border-white/5 animate-fade-in';
+        explanationDiv.innerHTML = `
+            <div class="flex items-start gap-3">
+                <span class="material-icons-round text-primary mt-0.5">lightbulb</span>
+                <div>
+                    <h4 class="text-sm font-bold text-white mb-1">Explanation</h4>
+                    <p class="text-sm text-slate-300">${q.explanation || "No explanation provided."}</p>
+                </div>
+            </div>
+        `;
+        optionsContainer.appendChild(explanationDiv);
+
+        // Save answer
+        userAnswers[currentQuestionIndex] = index;
+        nextBtn.disabled = false;
+
+        // Update button text if last question
+        if (currentQuestionIndex === questions.length - 1) {
+            nextBtn.innerHTML = `Finish Quiz <span class="material-icons-round text-lg">flag</span>`;
+        }
+    }
+
+    nextBtn.onclick = () => {
+        if (currentQuestionIndex < questions.length - 1) {
+            currentQuestionIndex++;
+            showQuestion(currentQuestionIndex);
+            updateProgress();
+        } else {
+            finishQuiz();
+        }
+    };
+
+    prevBtn.onclick = () => {
+        if (currentQuestionIndex > 0) {
+            currentQuestionIndex--;
+            showQuestion(currentQuestionIndex);
+            updateProgress();
+        }
+    };
+
+    function updateProgress() {
+        const total = questions.length;
+        const current = currentQuestionIndex + 1;
+        const pct = (current / total) * 100;
+
+        progressText.textContent = `Question ${current} of ${total}`;
+        progressPercent.textContent = `${Math.round(pct)}%`;
+        progressBar.style.width = `${pct}%`;
+    }
+
+    async function finishQuiz() {
+        // Calculate score locally
+        let finalScore = 0;
+        questions.forEach((q, i) => {
+            const userAnswerText = q.options[userAnswers[i]];
+
+            if (q.correct_answer) {
+                if (userAnswerText === q.correct_answer) finalScore++;
+            } else if (q.correct_index !== undefined) {
+                if (userAnswers[i] === q.correct_index) finalScore++;
+            } else if (q.answer) {
+                // Fallback for mock data or alternative format
+                if (userAnswerText === q.answer) finalScore++;
+            }
+        });
+
+        const timerEl = document.getElementById('timer');
+        const timeTaken = timerEl.textContent;
+
+        // Save to backend
+        try {
+            const csrfToken = '{{ csrf_token }}';
+            await fetch(`{% url 'quiz_save_result' upload.id %}`, {
+                method: 'POST',
+                headers: {
+                    'X-CSRFToken': csrfToken,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    score: finalScore,
+                    total: questions.length,
+                    time_taken: timeTaken
+                })
+            });
+        } catch (e) {
+            console.error("Error saving result", e);
+        }
+
+        // Store full quiz review for results page
+        try {
+            sessionStorage.setItem('last_quiz_review', JSON.stringify({
+                questions: questions,
+                userAnswers: userAnswers,
+                score: finalScore,
+                total: questions.length,
+                time: timeTaken
+            }));
+        } catch (e) {
+            console.warn("Could not save quiz review to sessionStorage:", e);
+        }
+
+        // Redirect to results
+        window.location.href = `{% url 'quiz_results' upload.id %}?score=${finalScore}&total=${questions.length}&time=${timeTaken}`;
+    }
+
+    let timerInterval;
+    function startTimer() {
+        let seconds = 0;
+        const timerEl = document.getElementById('timer');
+        clearInterval(timerInterval);
+        timerInterval = setInterval(() => {
+            seconds++;
+            const m = Math.floor(seconds / 60).toString().padStart(2, '0');
+            const s = (seconds % 60).toString().padStart(2, '0');
+            timerEl.textContent = `${m}:${s}`;
+        }, 1000);
+    }
+
+    document.getElementById('quit-quiz').onclick = () => {
+        if (confirm('Are you sure you want to quit?')) {
+            window.location.href = "{% url 'summary' upload.id %}";
+        }
+    };
+
+    // Custom Dropdown Logic
+    const dropdownTrigger = document.getElementById('dropdown-trigger');
+    const dropdownMenu = document.getElementById('dropdown-menu');
+    const dropdownArrow = document.getElementById('dropdown-arrow');
+    const numQuestionsInput = document.getElementById('num_questions_input');
+    const selectedQuestionText = document.getElementById('selected-question-text');
+
+    dropdownTrigger.addEventListener('click', () => {
+        const isHidden = dropdownMenu.classList.contains('hidden');
+        if (isHidden) {
+            dropdownMenu.classList.remove('hidden');
+            dropdownArrow.style.transform = 'rotate(180deg)';
+        } else {
+            dropdownMenu.classList.add('hidden');
+            dropdownArrow.style.transform = 'rotate(0deg)';
+        }
+    });
+
+    // Close dropdown when clicking outside
+    document.addEventListener('click', (e) => {
+        if (!dropdownTrigger.contains(e.target) && !dropdownMenu.contains(e.target)) {
+            dropdownMenu.classList.add('hidden');
+            dropdownArrow.style.transform = 'rotate(0deg)';
+        }
+    });
+
+    function selectQuestionCount(value, text) {
+        numQuestionsInput.value = value;
+        selectedQuestionText.textContent = text;
+        dropdownMenu.classList.add('hidden');
+        dropdownArrow.style.transform = 'rotate(0deg)';
+
+        // Update selection UI (optional checkmark moved)
+        const items = dropdownMenu.querySelectorAll('.dropdown-item');
+        items.forEach(item => {
+            const spanText = item.querySelector('span').textContent;
+            if (spanText === text) {
+                item.className = 'dropdown-item px-4 py-2.5 rounded-lg text-white bg-primary/10 hover:bg-primary/20 cursor-pointer transition-colors flex items-center justify-between';
+                if (!item.querySelector('.material-icons-round')) {
+                    item.innerHTML += '<span class="material-icons-round text-primary text-sm">check</span>';
+                }
+            } else {
+                item.className = 'dropdown-item px-4 py-2.5 rounded-lg text-slate-300 hover:text-white hover:bg-white/10 cursor-pointer transition-colors flex items-center justify-between';
+                const check = item.querySelector('.material-icons-round');
+                if (check) check.remove();
+            }
+        });
+    }
+
+</script>
+{% endblock %}

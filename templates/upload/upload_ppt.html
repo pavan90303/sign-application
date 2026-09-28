@@ -1,0 +1,166 @@
+{% extends 'base.html' %}
+
+{% block page_title %}Upload Presentation{% endblock %}
+{% block page_subtitle %}Import your lesson materials to generate AI sign language avatars.{% endblock %}
+
+{% block content %}
+<div class="w-full max-w-2xl mx-auto relative">
+    <!-- Glass Card -->
+    <div class="glass-panel rounded-3xl p-10 md:p-14 text-center relative overflow-hidden">
+        <!-- Decorative Top Border Shine -->
+        <div
+            class="absolute top-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-glass-highlight to-transparent opacity-50">
+        </div>
+
+        {% if error %}
+        <div class="mb-6 p-4 rounded-xl bg-red-500/10 border border-red-500/20 text-red-200 text-sm">
+            <div class="flex items-center gap-2">
+                <span class="material-icons-round text-base">error_outline</span>
+                <span>{{ error }}</span>
+            </div>
+        </div>
+        {% endif %}
+
+        <form method="post" enctype="multipart/form-data" id="uploadForm" action="{% url 'upload' %}">
+            {% csrf_token %}
+
+            <!-- Drop Zone -->
+            <div class="group relative w-full border-2 border-dashed border-white/10 rounded-2xl bg-white/[0.02] hover:bg-white/[0.04] hover:border-primary/50 transition-all duration-300 ease-out cursor-pointer flex flex-col items-center justify-center py-16 px-6"
+                id="dropZone">
+                <!-- Upload Icon with Glow -->
+                <div class="relative mb-6">
+                    <div
+                        class="absolute inset-0 bg-primary/30 blur-xl rounded-full scale-150 group-hover:scale-175 transition-transform duration-500">
+                    </div>
+                    <div
+                        class="relative w-16 h-16 bg-gradient-to-br from-gray-800 to-black rounded-2xl border border-white/10 flex items-center justify-center shadow-2xl group-hover:-translate-y-1 transition-transform duration-300">
+                        <span
+                            class="material-icons-round text-primary text-3xl group-hover:text-white transition-colors">cloud_upload</span>
+                    </div>
+                </div>
+                <h3 class="text-xl font-medium text-white mb-2 group-hover:text-primary transition-colors">Drag & Drop
+                    your presentation or document here</h3>
+                <p class="text-gray-500 mb-6">or <span
+                        class="text-primary border-b border-primary/30 hover:border-primary cursor-pointer">browse to
+                        upload</span></p>
+                <div class="flex items-center gap-4 text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <span class="flex items-center gap-1"><span class="material-icons-round text-sm">description</span>
+                        PPTX / PDF / DOCX / TXT</span>
+                    <span class="w-1 h-1 bg-gray-700 rounded-full"></span>
+                    <span>Max 25MB</span>
+                </div>
+                <!-- Hidden Input -->
+                <input type="file" name="file" accept=".pptx,.ppt,.pdf,.docx,.txt"
+                    class="absolute inset-0 w-full h-full opacity-0 cursor-pointer" id="fileInput"
+                    onchange="handleFileSelect(this)" required>
+            </div>
+
+            <!-- File Info / Progress Section (Initially Hidden) -->
+            <div id="fileInfo" class="mt-8 w-full bg-white/[0.03] rounded-xl p-4 border border-white/5 hidden">
+                <div class="flex items-center gap-4">
+                    <div
+                        class="w-10 h-10 rounded-lg bg-primary/20 flex items-center justify-center flex-shrink-0 text-primary">
+                        <span class="material-icons-round">description</span>
+                    </div>
+                    <div class="flex-grow min-w-0 text-left">
+                        <div class="flex flex-col">
+                            <span class="text-sm font-medium text-white truncate" id="fileName">...</span>
+                            <span class="text-xs text-gray-500 mt-0.5">Ready to process</span>
+                        </div>
+                    </div>
+                </div>
+                <button type="submit"
+                    class="mt-4 w-full py-3 rounded-xl bg-primary hover:bg-primary/90 text-white font-medium transition-all shadow-lg shadow-primary/25 flex items-center justify-center gap-2">
+                    <span>Process File</span>
+                    <span class="material-icons-round text-lg">arrow_forward</span>
+                </button>
+            </div>
+
+            <!-- Loading Spinner (Initially Hidden) -->
+            <div id="loadingSection" class="mt-8 hidden">
+                <div class="flex flex-col items-center">
+                    <div class="w-12 h-12 border-4 border-primary/30 border-t-primary rounded-full animate-spin mb-4">
+                    </div>
+                    <p class="text-white font-medium">Analyzing content with AI...</p>
+                    <p class="text-sm text-gray-400 mt-1">This may take a moment</p>
+                </div>
+            </div>
+
+        </form>
+
+        <!-- Bottom Note -->
+        <p class="text-center text-gray-500 text-sm mt-6">
+            <span class="material-icons-round text-sm align-middle mr-1">lock</span>
+            Files are encrypted and processed securely.
+        </p>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    const dropZone = document.getElementById('dropZone');
+    const fileInput = document.getElementById('fileInput');
+    const fileInfo = document.getElementById('fileInfo');
+    const fileName = document.getElementById('fileName');
+    const loadingSection = document.getElementById('loadingSection');
+    const uploadForm = document.getElementById('uploadForm');
+
+    // Drag and drop effects
+    ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+        dropZone.addEventListener(eventName, preventDefaults, false);
+    });
+
+    function preventDefaults(e) {
+        e.preventDefault();
+        e.stopPropagation();
+    }
+
+    ['dragenter', 'dragover'].forEach(eventName => {
+        dropZone.addEventListener(eventName, highlight, false);
+    });
+
+    ['dragleave', 'drop'].forEach(eventName => {
+        dropZone.addEventListener(eventName, unhighlight, false);
+    });
+
+    function highlight(e) {
+        dropZone.classList.add('border-primary');
+        dropZone.classList.add('bg-white/[0.05]');
+    }
+
+    function unhighlight(e) {
+        dropZone.classList.remove('border-primary');
+        dropZone.classList.remove('bg-white/[0.05]');
+    }
+
+    dropZone.addEventListener('drop', handleDrop, false);
+
+    function handleDrop(e) {
+        const dt = e.dataTransfer;
+        const files = dt.files;
+        fileInput.files = files;
+        handleFileSelect(fileInput);
+    }
+
+    function handleFileSelect(input) {
+        if (input.files && input.files[0]) {
+            fileName.textContent = input.files[0].name;
+            fileInfo.classList.remove('hidden');
+            fileInfo.classList.add('block'); // ensure block display
+            dropZone.classList.add('hidden'); // Hide dropzone to focus on selected file
+        }
+    }
+
+    uploadForm.addEventListener('submit', function (e) {
+        console.log("Submitting form...");
+        if (!fileInput.files || fileInput.files.length === 0) {
+            e.preventDefault();
+            alert("Please select a valid document or presentation file.");
+            return;
+        }
+        fileInfo.classList.add('hidden');
+        loadingSection.classList.remove('hidden');
+    });
+</script>
+{% endblock %}

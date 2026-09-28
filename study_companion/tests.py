@@ -255,7 +255,7 @@ class LearnSignLanguageFeatureTests(TestCase):
         self.assertEqual(response.status_code, 200)
         data = json.loads(response.content)
         self.assertEqual(data['status'], 'ok')
-        self.assertEqual(len(data['questions']), 10)
+        self.assertEqual(len(data['questions']), 15)
         # Ensure correct answers are NOT in the client payload
         for q in data['questions']:
             self.assertNotIn('correct_answer', q)
@@ -312,12 +312,12 @@ class LearnSignLanguageFeatureTests(TestCase):
             quiz = generate_section_quiz(sec.id)
             server_q = quiz['server_questions']
             client_q = quiz['client_questions']
-            self.assertEqual(len(server_q), 10)
-            self.assertEqual(len(client_q), 10)
+            self.assertEqual(len(server_q), 15)
+            self.assertEqual(len(client_q), 15)
             for q in server_q:
                 self.assertEqual(q['section_id'], sec.id)
                 self.assertEqual(q['section_number'], sec.section_number)
-                if q['type'] in ('sign_to_meaning', 'complete_sentence', 'sequence_to_meaning', 'dialogue'):
+                if q['type'] in ('sign_to_meaning', 'complete_sentence', 'sequence_to_meaning', 'dialogue', 'context_meaning', 'sentence_to_sequence'):
                     self.assertEqual(len(q['options']), 4)
                     self.assertEqual(len(set(q['options'])), 4)
                     self.assertIn(q['correct_answer'], q['options'])
@@ -550,6 +550,7 @@ class LearnSignLanguageFeatureTests(TestCase):
         self.assertIn('overall_score', eval_res)
         self.assertIn('category_summary', eval_res)
         self.assertTrue(len(eval_res['concept_results']) >= 6)
+
 
 
 

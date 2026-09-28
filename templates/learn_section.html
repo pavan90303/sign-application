@@ -1,0 +1,259 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Section {{ section.section_number }}: {{ section.title }} • SignAI Pro{% endblock %}
+
+{% block page_title %}{{ section.title }}{% endblock %}
+{% block page_subtitle %}Section {{ section.section_number }} • Learning Overview & Pathways{% endblock %}
+
+{% block header_content %}
+<div class="flex items-center justify-between w-full">
+    <!-- Breadcrumb: Course / Section Title -->
+    <div class="flex items-center space-x-2 text-xs font-semibold text-slate-400">
+        <a href="{% url 'learn_dashboard' %}" class="hover:text-primary transition-colors flex items-center">
+            <span class="material-icons-round text-sm mr-1">school</span> Course
+        </a>
+        <span class="text-slate-600">/</span>
+        <span class="text-primary font-bold">{{ section.title }}</span>
+    </div>
+
+    <!-- Back to Course Map -->
+    <a href="{% url 'learn_dashboard' %}" class="text-slate-400 hover:text-white transition-colors p-1.5 rounded-xl hover:bg-white/5" title="Course Map">
+        <span class="material-icons-round text-xl">map</span>
+    </a>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+
+    <!-- ======================================================== -->
+    <!-- MAIN CONTENT AREA (8 COLS ON LG)                         -->
+    <!-- ======================================================== -->
+    <div class="lg:col-span-8 space-y-6">
+
+        <!-- 1. SECTION HERO & LEARNING OVERVIEW -->
+        <div class="glass-panel p-6 sm:p-8 rounded-3xl border border-white/10 relative overflow-hidden shadow-2xl">
+            <div class="absolute -right-20 -bottom-20 w-72 h-72 bg-primary/10 rounded-full blur-3xl pointer-events-none"></div>
+
+            <div class="relative z-10 space-y-5">
+                <div class="flex flex-wrap items-center justify-between gap-3">
+                    <div class="flex items-center space-x-2">
+                        <span class="px-3 py-1 rounded-full bg-primary/20 text-indigo-300 border border-primary/30 text-xs font-extrabold uppercase tracking-wider">
+                            Section {{ section.section_number }} • {{ section.level }}
+                        </span>
+                        {% if quiz_passed %}
+                        <span class="px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-xs font-bold flex items-center space-x-1">
+                            <span class="material-icons-round text-sm">verified</span>
+                            <span>Passed ({{ best_score|floatformat:0 }}%)</span>
+                        </span>
+                        {% endif %}
+                    </div>
+
+                    <span class="text-xs font-mono text-slate-400 font-semibold">{{ total_vocab }} Essential Signs</span>
+                </div>
+
+                <div>
+                    <h1 class="text-2xl sm:text-3xl font-extrabold text-white tracking-tight leading-snug">
+                        {{ section.title }}
+                    </h1>
+                    <p class="text-sm text-slate-300 mt-2 leading-relaxed max-w-2xl">
+                        {{ section.description }}
+                    </p>
+                </div>
+
+                <!-- 3 Section Milestones -->
+                <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
+                    <div class="p-3.5 rounded-2xl bg-white/5 border border-white/5 flex items-center space-x-3">
+                        <span class="material-icons-round text-indigo-400 text-2xl flex-shrink-0">auto_stories</span>
+                        <div>
+                            <span class="block text-[10px] uppercase font-bold text-slate-400">Step 1</span>
+                            <span class="text-xs font-bold text-white">Section Learning</span>
+                        </div>
+                    </div>
+                    <div class="p-3.5 rounded-2xl bg-white/5 border border-white/5 flex items-center space-x-3">
+                        <span class="material-icons-round text-amber-400 text-2xl flex-shrink-0">videocam</span>
+                        <div>
+                            <span class="block text-[10px] uppercase font-bold text-slate-400">Step 2 (Optional)</span>
+                            <span class="text-xs font-bold text-white">Practice Signs</span>
+                        </div>
+                    </div>
+                    <div class="p-3.5 rounded-2xl bg-white/5 border border-white/5 flex items-center space-x-3">
+                        <span class="material-icons-round text-emerald-400 text-2xl flex-shrink-0">quiz</span>
+                        <div>
+                            <span class="block text-[10px] uppercase font-bold text-slate-400">Step 3 (Required)</span>
+                            <span class="text-xs font-bold text-white">Section Quiz (60%)</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 2. ACTION PATHWAYS: PRACTICE VS QUIZ -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <!-- Pathway 1: Optional Practice Zone -->
+            <div class="glass-panel p-6 rounded-3xl border border-white/10 hover:border-amber-400/40 transition-all shadow-xl flex flex-col justify-between space-y-4 group">
+                <div class="space-y-3">
+                    <div class="w-12 h-12 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-amber-400 flex items-center justify-center text-2xl shadow-inner group-hover:scale-105 transition-transform">
+                        <span class="material-icons-round">videocam</span>
+                    </div>
+                    <div>
+                        <div class="flex items-center space-x-2">
+                            <h3 class="text-base font-bold text-white">Practice Zone</h3>
+                            <span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-white/10 text-slate-400 uppercase">Optional</span>
+                        </div>
+                        <p class="text-xs text-slate-300 mt-1 leading-relaxed">
+                            Open your webcam to practice gestures with real-time MediaPipe hand landmark tracking and trained AI recognition.
+                        </p>
+                    </div>
+                </div>
+
+                <a href="{% url 'learn_practice' section.id %}" class="inline-flex items-center justify-center w-full px-5 py-3 rounded-xl bg-white/10 hover:bg-white/15 text-white font-bold text-xs border border-white/10 transition-all shadow-md space-x-1.5 cursor-pointer">
+                    <span class="material-icons-round text-sm">play_arrow</span>
+                    <span>Launch Practice Zone</span>
+                </a>
+            </div>
+
+            <!-- Pathway 2: Section Quiz (SignAI Learning Quest) -->
+            <div class="glass-panel p-6 rounded-3xl border border-primary/30 hover:border-primary/60 transition-all shadow-2xl flex flex-col justify-between space-y-4 bg-primary/[0.04] group">
+                <div class="space-y-3">
+                    <div class="w-12 h-12 rounded-2xl bg-gradient-to-tr from-primary to-indigo-600 text-white flex items-center justify-center text-2xl shadow-lg shadow-primary/25 group-hover:scale-105 transition-transform">
+                        <span class="material-icons-round">explore</span>
+                    </div>
+                    <div>
+                        <div class="flex items-center space-x-2">
+                            <h3 class="text-base font-bold text-white">SignAI Learning Quest</h3>
+                            <span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 uppercase">Required</span>
+                        </div>
+                        <p class="text-xs text-slate-300 mt-1 leading-relaxed">
+                            Conquer the 15-level adventure map to test your sign recognition, earn stars, and unlock the next section (&ge;60% pass mark).
+                        </p>
+                    </div>
+                </div>
+
+                <a href="{% url 'learn_quiz' section.id %}" class="inline-flex items-center justify-center w-full px-5 py-3 rounded-xl bg-gradient-to-r from-primary to-indigo-600 hover:from-primary/90 hover:to-indigo-500 text-white font-bold text-xs shadow-xl shadow-primary/30 transition-all space-x-1.5 cursor-pointer">
+                    <span class="material-icons-round text-sm">quiz</span>
+                    <span>{% if quiz_passed %}Retake Section Quiz{% else %}Start Section Quiz{% endif %}</span>
+                </a>
+            </div>
+        </div>
+
+        <!-- 3. SECTION VOCABULARY & CONCEPTS OVERVIEW -->
+        <div class="glass-panel p-6 sm:p-7 rounded-3xl border border-white/10 shadow-2xl space-y-4">
+            <div class="flex items-center justify-between border-b border-white/5 pb-3">
+                <div class="flex items-center space-x-2.5">
+                    <span class="material-icons-round text-primary text-xl">menu_book</span>
+                    <h3 class="text-base font-bold text-white tracking-tight">Curriculum Vocabulary &amp; Signs ({{ total_vocab }})</h3>
+                </div>
+                <span class="text-xs text-slate-400 font-medium">Included in Section Quiz &amp; Practice</span>
+            </div>
+
+            <p class="text-xs text-slate-300 leading-relaxed">
+                Review the core signs for this section. All signs are available in the Practice Zone and are evaluated in the Learning Quest Quiz.
+            </p>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[480px] overflow-y-auto pr-1 custom-scrollbar">
+                {% for item in vocab_items %}
+                <div class="p-3.5 rounded-2xl bg-white/[0.03] border border-white/5 hover:border-white/10 transition-colors flex items-start space-x-3 group">
+                    <span class="w-8 h-8 rounded-xl bg-white/5 text-primary text-xs font-black font-mono flex items-center justify-center flex-shrink-0 border border-white/5 group-hover:bg-primary group-hover:text-white transition-colors">
+                        {{ forloop.counter }}
+                    </span>
+                    <div class="space-y-0.5 min-w-0 flex-1">
+                        <div class="flex items-center justify-between">
+                            <h4 class="text-sm font-bold text-white truncate">{{ item.word_or_phrase }}</h4>
+                            <span class="text-[10px] font-mono text-slate-500 uppercase">{{ item.learning_type }}</span>
+                        </div>
+                        <p class="text-xs text-slate-400 leading-snug line-clamp-2">{{ item.explanation }}</p>
+                    </div>
+                </div>
+                {% empty %}
+                <div class="col-span-2 text-center p-8 text-slate-500 text-xs">
+                    Curriculum signs loaded dynamically for this section.
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+
+    </div>
+
+    <!-- ======================================================== -->
+    <!-- CURRICULUM SIDEBAR (4 COLS ON LG)                        -->
+    <!-- SECTION-LEVEL NAVIGATION ONLY (NO INDIVIDUAL SIGNS)      -->
+    <!-- ======================================================== -->
+    <div class="lg:col-span-4 space-y-4">
+        <div class="glass-panel p-5 rounded-3xl border border-white/10 sticky top-6 shadow-2xl space-y-4">
+            
+            <div class="flex items-center justify-between pb-3 border-b border-white/5">
+                <div class="flex items-center space-x-2">
+                    <span class="material-icons-round text-primary text-xl">view_list</span>
+                    <h3 class="font-bold text-white text-base">Course Curriculum</h3>
+                </div>
+                <a href="{% url 'learn_dashboard' %}" class="text-xs text-primary hover:underline font-semibold">Course Map</a>
+            </div>
+
+            <!-- 5 Section Cards: Section is the Primary Item (No Individual Signs) -->
+            <div class="space-y-2.5">
+                {% for sec_item in curriculum %}
+                <div class="rounded-2xl border transition-all overflow-hidden {% if sec_item.is_current %}border-primary/40 bg-primary/[0.08] shadow-lg shadow-primary/10{% elif sec_item.is_unlocked %}border-white/5 bg-white/[0.02] hover:bg-white/5{% else %}border-white/5 bg-white/[0.01] opacity-50{% endif %}">
+                    
+                    <!-- Section Header Row -->
+                    <div class="p-3.5 flex items-center justify-between">
+                        <div class="flex items-center space-x-3 min-w-0">
+                            <span class="w-7 h-7 rounded-xl flex items-center justify-center font-bold text-xs flex-shrink-0 {% if sec_item.is_completed %}bg-emerald-500/20 text-emerald-400 border border-emerald-500/30{% elif sec_item.is_current %}bg-primary text-white shadow-md{% else %}bg-white/10 text-slate-400{% endif %}">
+                                {% if sec_item.is_completed %}✓{% else %}{{ sec_item.section.order }}{% endif %}
+                            </span>
+                            <div class="min-w-0">
+                                <h4 class="text-xs font-bold text-white truncate">{{ sec_item.section.title }}</h4>
+                                <span class="text-[10px] text-slate-400 block">
+                                    {% if sec_item.quiz_passed %}Mastered ({{ sec_item.best_score|floatformat:0 }}%){% elif sec_item.is_unlocked %}Available{% else %}Locked{% endif %}
+                                </span>
+                            </div>
+                        </div>
+
+                        {% if not sec_item.is_unlocked %}
+                        <span class="material-icons-round text-slate-600 text-sm">lock</span>
+                        {% endif %}
+                    </div>
+
+                    <!-- 3 Section-Level Action Links (No individual sign rows) -->
+                    {% if sec_item.is_unlocked %}
+                    <div class="px-3.5 pb-3 pt-1 border-t border-white/5 flex items-center justify-between text-[11px] font-medium">
+                        <a href="{% url 'learn_section' sec_item.section.id %}" class="flex items-center {% if sec_item.is_current %}text-primary font-bold{% else %}text-slate-400 hover:text-white{% endif %} transition-colors">
+                            <span class="material-icons-round text-xs mr-1">auto_stories</span> Learning
+                        </a>
+                        <a href="{% url 'learn_practice' sec_item.section.id %}" class="text-slate-400 hover:text-white transition-colors flex items-center">
+                            <span class="material-icons-round text-xs mr-1">videocam</span> Practice
+                        </a>
+                        <a href="{% url 'learn_quiz' sec_item.section.id %}" class="{% if sec_item.quiz_passed %}text-emerald-400 hover:text-emerald-300{% else %}text-amber-400 hover:text-amber-300{% endif %} font-semibold transition-colors flex items-center">
+                            <span class="material-icons-round text-xs mr-1">quiz</span> Quiz
+                        </a>
+                    </div>
+                    {% endif %}
+
+                </div>
+                {% endfor %}
+            </div>
+
+            <!-- Back to Dashboard -->
+            <div class="pt-2 border-t border-white/5 text-center">
+                <a href="{% url 'learn_dashboard' %}" class="text-xs text-slate-400 hover:text-white flex items-center justify-center space-x-1 transition-colors">
+                    <span class="material-icons-round text-sm">arrow_back</span>
+                    <span>Return to Learning Dashboard</span>
+                </a>
+            </div>
+
+        </div>
+    </div>
+
+</div>
+
+<style>
+.custom-scrollbar::-webkit-scrollbar {
+    width: 4px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.2);
+    border-radius: 4px;
+}
+</style>
+{% endblock %}
