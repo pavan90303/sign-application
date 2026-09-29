@@ -19,11 +19,16 @@ def get_verified_asset_info(asset_name):
     ext = os.path.splitext(clean_name)[1].lower()
     media_type = 'video' if ext in ('.mp4', '.webm', '.ogg', '.mov') else ('gif' if ext == '.gif' else 'image')
 
-    base_assets = os.path.join(settings.BASE_DIR, 'assets', clean_name)
+    assets_dir = getattr(settings, 'ASSETS_DIR', os.path.join(settings.BASE_DIR, 'assets'))
+    base_assets = os.path.join(assets_dir, clean_name)
     if os.path.exists(base_assets):
         return {'exists': True, 'filename': clean_name, 'url': f"/static/{clean_name}", 'media_type': media_type}
-    
-    gif_assets = os.path.join(settings.BASE_DIR, 'assets', 'ISL_Gifs', clean_name)
+
+    signs_assets = os.path.join(assets_dir, 'signs', clean_name)
+    if os.path.exists(signs_assets):
+        return {'exists': True, 'filename': clean_name, 'url': f"/static/signs/{clean_name}", 'media_type': media_type}
+
+    gif_assets = os.path.join(assets_dir, 'ISL_Gifs', clean_name)
     if os.path.exists(gif_assets):
         return {'exists': True, 'filename': clean_name, 'url': f"/static/ISL_Gifs/{clean_name}", 'media_type': media_type}
 
@@ -520,16 +525,19 @@ def generate_section_quiz(section_id, user=None):
 
     # SECTION 1: Alphabets & Letters (A-Z) - 26 letters with video
     if sec_num == 1:
-        available = list(video_lessons)
+        pool = list(video_lessons) if video_lessons else list(all_lessons)
+        available = list(pool)
         random.shuffle(available)
 
         # 10x Sign -> Letter (sign_to_meaning)
         for _ in range(10):
-            if not available:
-                available = list(video_lessons)
+            if not available and pool:
+                available = list(pool)
                 random.shuffle(available)
+            if not available:
+                break
             target = available.pop()
-            distractors = pick_distractors(target, video_lessons, count=3)
+            distractors = pick_distractors(target, pool, count=3)
             options = [target.word_or_phrase] + distractors
             random.shuffle(options)
             first_asset = target.sign_asset.split(',')[0].strip()

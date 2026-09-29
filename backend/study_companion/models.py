@@ -113,23 +113,31 @@ class Lesson(models.Model):
         if not self.sign_asset:
             return False
         first_asset = self.sign_asset.split(',')[0].strip()
-        asset_path = os.path.join(settings.BASE_DIR, 'assets', first_asset)
-        return os.path.exists(asset_path)
+        assets_dir = getattr(settings, 'ASSETS_DIR', os.path.join(settings.BASE_DIR, 'assets'))
+        asset_path = os.path.join(assets_dir, first_asset)
+        if os.path.exists(asset_path):
+            return True
+        signs_path = os.path.join(assets_dir, 'signs', first_asset)
+        return os.path.exists(signs_path)
 
     @property
     def sign_asset_list(self):
         if not self.sign_asset:
             return []
         items = []
+        assets_dir = getattr(settings, 'ASSETS_DIR', os.path.join(settings.BASE_DIR, 'assets'))
         for s in self.sign_asset.split(','):
             cleaned = s.strip()
             if cleaned:
-                asset_path = os.path.join(settings.BASE_DIR, 'assets', cleaned)
+                asset_path = os.path.join(assets_dir, cleaned)
+                signs_path = os.path.join(assets_dir, 'signs', cleaned)
+                exists = os.path.exists(asset_path) or os.path.exists(signs_path)
+                url = f"/static/{cleaned}" if os.path.exists(asset_path) else f"/static/signs/{cleaned}"
                 items.append({
                     'name': os.path.splitext(cleaned)[0],
                     'filename': cleaned,
-                    'exists': os.path.exists(asset_path),
-                    'url': f"/static/{cleaned}"
+                    'exists': exists,
+                    'url': url
                 })
         return items
 

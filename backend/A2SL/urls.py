@@ -20,10 +20,12 @@ from django.conf import settings
 import os
 from . import views
 
+assets_root = getattr(settings, 'ASSETS_DIR', os.path.join(settings.BASE_DIR, 'assets'))
+
 urlpatterns = [
     path('admin/', admin.site.urls),
-    re_path(r'^static/(?P<path>.*)$', serve, {'document_root': os.path.join(settings.BASE_DIR, 'assets')}),
-    re_path(r'^assets/(?P<path>.*)$', serve, {'document_root': os.path.join(settings.BASE_DIR, 'assets')}),
+    re_path(r'^static/(?P<path>.*)$', serve, {'document_root': assets_root}),
+    re_path(r'^assets/(?P<path>.*)$', serve, {'document_root': assets_root}),
 
     # Feature Modules
     path('', include('apps.accounts.urls')),

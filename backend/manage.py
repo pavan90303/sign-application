@@ -1,13 +1,12 @@
 #!/usr/bin/env python
-"""Root convenience runner for Django administrative tasks (delegates to backend)."""
+"""Django's command-line utility for administrative tasks inside backend/."""
 import os
 import sys
 from pathlib import Path
 
 
 def main():
-    root_dir = Path(__file__).resolve().parent
-    backend_dir = root_dir / 'backend'
+    backend_dir = Path(__file__).resolve().parent
     if str(backend_dir) not in sys.path:
         sys.path.insert(0, str(backend_dir))
 

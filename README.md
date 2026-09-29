@@ -21,56 +21,42 @@
 
 ---
 
-## 🏗️ Feature-Based Project Structure
+## 🏗️ Architecture: Clean Frontend & Backend Separation
+
+The project is cleanly decoupled into dedicated `frontend/` and `backend/` modules:
 
 ```
 sign-project/
-├── A2SL/                           # Core Project Configuration & WSGI
-│   ├── settings.py                 # Installed apps, templates, static routes
-│   └── urls.py                     # Root routing table including all feature apps
+├── frontend/                           # UI Templates, Styles, Scripts & Animation Assets
+│   ├── templates/                      # Organized HTML templates
+│   │   ├── accounts/                   # Login, signup, user profile & editing
+│   │   ├── dashboard/                  # Learning dashboard and history
+│   │   ├── learning/                   # Course lessons and interactive practice
+│   │   ├── quiz/                       # Quizzes, MCQs, and Sign Quest game
+│   │   ├── sign_to_english/            # Live camera ISL fingerspelling recognition
+│   │   ├── concept_assessment/         # Student video explanation & teacher review
+│   │   ├── upload/                     # PPT/PDF document study material upload
+│   │   ├── live_converter/             # Live English-to-sign animation converter
+│   │   └── shared/                     # Master layout (base.html) & navbars
+│   └── assets/                         # Static assets (CSS, JS, diagrams, sign videos)
+│       ├── css/                        # Tailwind & custom CSS bundles
+│       ├── js/                         # Client-side scripts & MediaPipe hooks
+│       └── signs/                      # Production ISL animation video clips (.mp4)
 │
-├── apps/                           # Modular Feature Packages
-│   ├── accounts/                   # Authentication, user profile, password management
-│   ├── dashboard/                  # Learning dashboard, user streaks, upload history
-│   ├── upload/                     # PPTX/PDF/DOCX document text extraction & summary
-│   ├── live_converter/             # Spoken English / Text to animated ISL sequence
-│   ├── learning/                   # 5-section ISL course, lessons, and interactive practice
-│   ├── quiz/                       # Document MCQs, Section Quizzes, and Sign Quest games
-│   ├── sign_to_english/            # Live camera fingerspelling (A-Z) and word recognition
-│   │   ├── recognition/            # Alphabet and sequence recognizer wrappers
-│   │   ├── translation/            # Word builder and natural English translator
-│   │   └── training/               # Offline training pipelines (train_alphabet.py, train_words.py)
-│   └── concept_assessment/         # Student video explanation evaluation vs reference topic
-│       └── services/               # Reference extraction, semantic comparison, graph alignment
+├── backend/                            # Django Core, Feature Apps, AI/ML Services
+│   ├── manage.py                       # Backend Django CLI runner
+│   ├── A2SL/                           # Core configuration (settings.py, urls.py, wsgi.py)
+│   ├── apps/                           # Modular feature apps (accounts, dashboard, etc.)
+│   ├── shared/                         # Unified SignRecognitionService, Gemini AI, NLP
+│   ├── study_companion/                # Course models, database handlers, migrations
+│   ├── models/                         # Pretrained PyTorch & Random Forest weights
+│   ├── datasets/                       # ISL alphabet and word training datasets
+│   └── tests/                          # Backend unit & integration test suites
 │
-├── shared/                         # Central Reusable Services
-│   ├── ai/
-│   │   └── gemini_service.py       # Centralized Gemini client & API wrapper
-│   ├── sign_language/
-│   │   ├── sign_recognition_service.py # Unified SignRecognitionService (used by both features)
-│   │   ├── isl_preprocessing.py   # Canonical 86-dim hand landmark feature extractor
-│   │   ├── temporal_model.py      # PyTorch BiGRU + Attention sequence classifier
-│   │   └── vocabulary.py          # Controlled vocabulary registry
-│   ├── utils/
-│   │   └── validators.py          # Document and video file validators
-│   └── templates/                 # Shared base templates (base.html)
-│
-├── models/                         # Pretrained Neural Network Weights & Configurations
-│   └── sign_to_english/
-│       ├── alphabet/               # isl_alphabet_model.pt, isl_alphabet_rf.joblib, labels
-│       └── words/                  # isl_sequence_model.pt, model_config.json, labels
-│
-├── datasets/                       # Training Datasets & Landmarked Samples
-│   ├── alphabets/                  # A-Z isolated landmark gesture datasets
-│   └── words/                      # Controlled vocabulary gesture sequences
-│
-├── templates/                      # Feature-organized HTML templates
-├── static/                         # Static CSS and JavaScript assets organized by feature
-├── assets/                         # Video assets (.mp4) for sign dictionary & animations
-├── media/                          # Uploaded documents and recorded concept videos
-├── docs/                           # System architecture & pipeline documentation
-│   └── architecture.md
-└── manage.py
+├── manage.py                           # Root runner (delegates to backend automatically)
+├── requirements.txt                    # Python runtime dependencies
+├── .env.example                        # Template for environment configuration
+└── docs/                               # Architecture and system documentation
 ```
 
 ---
