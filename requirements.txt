@@ -1,14 +1,18 @@
-# Core Web Framework
-Django>=4.1.9
-asgiref>=3.5.2
+# Core Web Framework & Production Server
+Django>=4.2.0
+asgiref>=3.8.0
 sqlparse>=0.4.4
 python-dotenv>=1.0.0
+whitenoise>=6.5.0
+gunicorn>=20.1.0
+dj-database-url>=2.1.0
+psycopg2-binary>=2.9.6
 
-# Computer Vision & Deep Learning
+# Computer Vision & Deep Learning (Headless for Cloud/Serverless)
 torch>=2.0.0
 torchvision>=0.15.0
 mediapipe>=0.10.0
-opencv-python>=4.8.0
+opencv-python-headless>=4.8.0
 scikit-learn>=1.2.0
 numpy>=1.24.0
 scipy>=1.10.0
